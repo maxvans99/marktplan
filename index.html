@@ -345,13 +345,27 @@ const TYPE_COLORS = ["#3B82F6","#10B981","#F59E0B","#EF4444","#8B5CF6","#EC4899"
 
 const ROLE_COLORS = ["#6366F1","#0EA5E9","#10B981","#F59E0B","#EF4444","#8B5CF6","#EC4899","#14B8A6"];
 const DEFAULT_ROLES = [
-  { id: 1, name: "Kasse",      color: "#6366F1" },
-  { id: 2, name: "TS",         color: "#0EA5E9" },
-  { id: 3, name: "GT",         color: "#8B5CF6" },
-  { id: 4, name: "Frische",    color: "#10B981" },
-  { id: 5, name: "Metzgerei",  color: "#EF4444" },
-  { id: 6, name: "Bäckerei",   color: "#F59E0B" },
+  { id: 1, name: "Kasse",      color: "#6366F1", minStaff: {} },
+  { id: 2, name: "TS",         color: "#0EA5E9", minStaff: {} },
+  { id: 3, name: "GT",         color: "#8B5CF6", minStaff: {} },
+  { id: 4, name: "Frische",    color: "#10B981", minStaff: {} },
+  { id: 5, name: "Metzgerei",  color: "#EF4444", minStaff: {} },
+  { id: 6, name: "Bäckerei",   color: "#F59E0B", minStaff: {} },
 ];
+const DEFAULT_THRESHOLDS = { frueh: "11:00", spaet: "14:00" };
+
+function classifyShift(startTime, thr) {
+  if (!startTime) return "Früh";
+  if (startTime < thr.frueh) return "Früh";
+  if (startTime < thr.spaet) return "Mittel";
+  return "Spät";
+}
+
+function extractRolesConfig(rc) {
+  if (!rc) return { roles: DEFAULT_ROLES.map(r => ({ ...r })), thresholds: { ...DEFAULT_THRESHOLDS } };
+  if (Array.isArray(rc)) return { roles: rc, thresholds: { ...DEFAULT_THRESHOLDS } };
+  return { roles: rc.roles ?? [], thresholds: rc.thresholds ?? { ...DEFAULT_THRESHOLDS } };
+}
 
 function defaultDelivery() {
   const yr = new Date().getFullYear();
@@ -451,7 +465,7 @@ function App() {
     Object.fromEntries(MARKETS.map(m => [m.id, defaultDelivery()]))
   );
   const [rolesConfig, setRolesConfig] = usePersistedState("rolesConfig", () =>
-    Object.fromEntries(MARKETS.map(m => [m.id, DEFAULT_ROLES.map(r => ({ ...r }))]))
+    Object.fromEntries(MARKETS.map(m => [m.id, { roles: DEFAULT_ROLES.map(r => ({ ...r })), thresholds: { ...DEFAULT_THRESHOLDS } }]))
   );
 
   useEffect(() => { try { localStorage.setItem(LS_PREFIX + "version", LS_VERSION); } catch {} }, []);
@@ -500,8 +514,9 @@ function App() {
       }}
       deliveryConfig={deliveryConfig[marketId] || { regularDays: [], exceptions: [] }}
       onUpdateDelivery={cfg => setDeliveryConfig(p => ({ ...p, [marketId]: cfg }))}
-      roles={rolesConfig[marketId] || DEFAULT_ROLES}
-      onUpdateRoles={roles => setRolesConfig(p => ({ ...p, [marketId]: roles }))}
+      roles={extractRolesConfig(rolesConfig[marketId]).roles}
+      thresholds={extractRolesConfig(rolesConfig[marketId]).thresholds}
+      onUpdateRoles={(roles, thresholds) => setRolesConfig(p => ({ ...p, [marketId]: { roles, thresholds } }))}
       onResetData={resetAllData}
     />
   );
@@ -1165,37 +1180,80 @@ function DeliveryModal({ config, onSave, onClose }) {
 }
 
 // ─── ROLLEN MODAL ────────────────────────────────────────────────────────────
-function RolesModal({ roles, onSave, onClose }) {
-  const [list, setList] = useState(roles.map(r => ({ ...r })));
+function RolesModal({ roles, thresholds: initThresholds, onSave, onClose }) {
+  const [list, setList] = useState(roles.map(r => ({ minStaff: {}, ...r })));
   const [newName, setNewName] = useState("");
+  const [thr, setThr] = useState(initThresholds ?? { ...DEFAULT_THRESHOLDS });
 
   function addRole() {
     if (!newName.trim()) return;
     const color = ROLE_COLORS[list.length % ROLE_COLORS.length];
-    setList(l => [...l, { id: uid(), name: newName.trim(), color }]);
+    setList(l => [...l, { id: uid(), name: newName.trim(), color, minStaff: {} }]);
     setNewName("");
   }
 
+  function setMin(id, typ, val) {
+    const n = parseInt(val);
+    setList(l => l.map(x => x.id === id ? { ...x, minStaff: { ...x.minStaff, [typ]: isNaN(n) || n < 0 ? 0 : n } } : x));
+  }
+
+  const inputStyle = { width: 44, padding: "4px 6px", border: "1.5px solid #E2E8F0", borderRadius: 6, fontSize: 12, fontWeight: 700, textAlign: "center", outline: "none" };
 
   return (
     <div className="ov" onClick={onClose}>
-      <div className="modal" style={{ width: "min(480px, calc(100vw - 24px))", maxHeight: "90vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
+      <div className="modal" style={{ width: "min(520px, calc(100vw - 24px))", maxHeight: "90vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
         <div className="modal-t">👷 Abteilungen / Rollen</div>
-        <div className="modal-s">Lege die Rollen fest, die Mitarbeitern bei der Schichtplanung zugewiesen werden können.</div>
+        <div className="modal-s">Lege Rollen und die Mindestbesetzung pro Schichttyp fest.</div>
+
+        {/* Schichtzeiten */}
+        <div style={{ background: "#F8FAFC", borderRadius: 10, padding: "10px 14px", marginBottom: 14 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em", color: "#94A3B8", marginBottom: 8 }}>Schichtzeiten</div>
+          <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ fontSize: 12, color: "#475569", fontWeight: 600 }}>Früh endet um</span>
+              <input type="time" value={thr.frueh} onChange={e => setThr(t => ({ ...t, frueh: e.target.value }))}
+                style={{ padding: "4px 8px", border: "1.5px solid #E2E8F0", borderRadius: 6, fontSize: 13, outline: "none" }} />
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ fontSize: 12, color: "#475569", fontWeight: 600 }}>Spät beginnt ab</span>
+              <input type="time" value={thr.spaet} onChange={e => setThr(t => ({ ...t, spaet: e.target.value }))}
+                style={{ padding: "4px 8px", border: "1.5px solid #E2E8F0", borderRadius: 6, fontSize: 13, outline: "none" }} />
+            </div>
+          </div>
+        </div>
+
+        {/* Tabellen-Header */}
+        {list.length > 0 && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 44px 44px 44px 28px", gap: 6, padding: "4px 0 6px", borderBottom: "2px solid #E2E8F0", marginBottom: 4 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase" }}>Rolle</span>
+            {["Früh", "Mittel", "Spät"].map(t => (
+              <span key={t} style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase", textAlign: "center" }}>{t}</span>
+            ))}
+            <span />
+          </div>
+        )}
 
         {list.length === 0 && <div style={{ fontSize: 13, color: "#94A3B8", padding: "8px 0 14px" }}>Noch keine Rollen angelegt.</div>}
 
         {list.map(r => (
-          <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0", borderBottom: "1px solid #F1F5F9" }}>
-            <label title="Farbe wählen" style={{ position: "relative", width: 24, height: 24, flexShrink: 0, cursor: "pointer" }}>
-              <input type="color" value={r.color} onChange={e => setList(l => l.map(x => x.id === r.id ? { ...x, color: e.target.value } : x))}
-                style={{ position: "absolute", opacity: 0, width: "100%", height: "100%", cursor: "pointer" }} />
-              <div style={{ width: 24, height: 24, borderRadius: "50%", background: r.color, border: "2px solid white", boxShadow: "0 0 0 1.5px " + r.color }} />
-            </label>
-            <input value={r.name} onChange={e => setList(l => l.map(x => x.id === r.id ? { ...x, name: e.target.value } : x))}
-              style={{ flex: 1, border: "1.5px solid #E2E8F0", borderRadius: 7, padding: "6px 10px", fontSize: 14, fontWeight: 600, color: "#1E293B", outline: "none", background: "white" }} />
+          <div key={r.id} style={{ display: "grid", gridTemplateColumns: "1fr 44px 44px 44px 28px", gap: 6, alignItems: "center", padding: "7px 0", borderBottom: "1px solid #F1F5F9" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+              <label title="Farbe wählen" style={{ position: "relative", width: 22, height: 22, flexShrink: 0, cursor: "pointer" }}>
+                <input type="color" value={r.color} onChange={e => setList(l => l.map(x => x.id === r.id ? { ...x, color: e.target.value } : x))}
+                  style={{ position: "absolute", opacity: 0, width: "100%", height: "100%", cursor: "pointer" }} />
+                <div style={{ width: 22, height: 22, borderRadius: "50%", background: r.color, border: "2px solid white", boxShadow: "0 0 0 1.5px " + r.color }} />
+              </label>
+              <input value={r.name} onChange={e => setList(l => l.map(x => x.id === r.id ? { ...x, name: e.target.value } : x))}
+                style={{ flex: 1, border: "1.5px solid #E2E8F0", borderRadius: 7, padding: "5px 8px", fontSize: 13, fontWeight: 600, color: "#1E293B", outline: "none", background: "white", minWidth: 0 }} />
+            </div>
+            {["Früh", "Mittel", "Spät"].map(typ => (
+              <input key={typ} type="number" min="0" max="99" placeholder="–"
+                value={(r.minStaff?.[typ] ?? "") === 0 ? "" : (r.minStaff?.[typ] ?? "")}
+                onChange={e => setMin(r.id, typ, e.target.value)}
+                style={inputStyle} />
+            ))}
             <button onClick={() => setList(l => l.filter(x => x.id !== r.id))}
-              style={{ background: "none", border: "none", color: "#CBD5E1", fontSize: 18, cursor: "pointer", padding: "0 4px", lineHeight: 1 }}>×</button>
+              style={{ background: "none", border: "none", color: "#CBD5E1", fontSize: 18, cursor: "pointer", padding: "0 2px", lineHeight: 1 }}>×</button>
           </div>
         ))}
 
@@ -1209,7 +1267,7 @@ function RolesModal({ roles, onSave, onClose }) {
 
         <div className="macts" style={{ marginTop: 18 }}>
           <button className="btn-cancel" onClick={onClose}>Abbrechen</button>
-          <button className="btn-ok" onClick={() => { onSave(list); onClose(); }}>Speichern</button>
+          <button className="btn-ok" onClick={() => { onSave(list, thr); onClose(); }}>Speichern</button>
         </div>
       </div>
     </div>
@@ -1217,7 +1275,7 @@ function RolesModal({ roles, onSave, onClose }) {
 }
 
 // ─── MARKTLEITUNG-ANSICHT ─────────────────────────────────────────────────────
-function ManagerView({ marketId, onMarketChange, isAdmin, employees, availability, shifts, weekStart, weekDates, onWeekChange, onAddShift, onDelShift, onAddEmployee, onDeleteEmployee, onImportAvailability, deliveryConfig, onUpdateDelivery, roles, onUpdateRoles, onLogout, onResetData }) {
+function ManagerView({ marketId, onMarketChange, isAdmin, employees, availability, shifts, weekStart, weekDates, onWeekChange, onAddShift, onDelShift, onAddEmployee, onDeleteEmployee, onImportAvailability, deliveryConfig, onUpdateDelivery, roles, thresholds, onUpdateRoles, onLogout, onResetData }) {
   const [sbOpen, setSbOpen] = useState(false);
   const [modal, setModal] = useState(null);
   const [delEmpModal, setDelEmpModal] = useState(null);
@@ -1449,28 +1507,70 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
           </div>
 
           {roles.length > 0 && (() => {
+            const thr = thresholds ?? DEFAULT_THRESHOLDS;
+            const TYPES = ["Früh", "Mittel", "Spät"];
             const weekShifts = shifts.filter(s => mktEmps.some(e => e.id === s.employeeId) && weekStrs.includes(s.date));
+            const hasSoll = roles.some(r => r.minStaff && Object.keys(r.minStaff).length > 0);
             return (
               <div style={{ marginTop: 16, background: "#fff", borderRadius: 14, padding: "14px 18px", boxShadow: "0 2px 16px rgba(0,0,0,.07)" }}>
-                <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: "#94A3B8", marginBottom: 10 }}>Rollenbelegung diese Woche</div>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  {roles.map(r => {
-                    const count = weekShifts.filter(s => s.roles ? s.roles.includes(r.name) : s.role === r.name).length;
-                    return (
-                      <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 6, background: r.color + "15", border: "1.5px solid " + r.color + "44", borderRadius: 9, padding: "6px 12px" }}>
-                        <div style={{ width: 10, height: 10, borderRadius: "50%", background: r.color, flexShrink: 0 }} />
-                        <span style={{ fontSize: 13, fontWeight: 700, color: r.color }}>{r.name}</span>
-                        <span style={{ fontSize: 13, color: "#64748B" }}>·</span>
-                        <span style={{ fontSize: 13, fontWeight: 600, color: count > 0 ? "#1E293B" : "#CBD5E1" }}>{count}×</span>
-                      </div>
-                    );
-                  })}
-                  {weekShifts.filter(s => !(s.roles ? s.roles.length > 0 : s.role)).length > 0 && (
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#F1F5F9", border: "1.5px solid #E2E8F0", borderRadius: 9, padding: "6px 12px" }}>
-                      <span style={{ fontSize: 13, color: "#94A3B8" }}>Ohne Rolle · {weekShifts.filter(s => !(s.roles ? s.roles.length > 0 : s.role)).length}×</span>
-                    </div>
-                  )}
+                <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: "#94A3B8", marginBottom: 12 }}>
+                  Auslastung diese Woche
+                  <span style={{ fontWeight: 400, color: "#CBD5E1", marginLeft: 8, textTransform: "none", letterSpacing: 0 }}>
+                    Früh &lt; {thr.frueh} · Mittel bis {thr.spaet} · Spät ab {thr.spaet}
+                  </span>
                 </div>
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 340 }}>
+                    <thead>
+                      <tr>
+                        <th style={{ textAlign: "left", fontSize: 11, fontWeight: 700, color: "#94A3B8", paddingBottom: 8, paddingRight: 12 }}>Abteilung</th>
+                        {TYPES.map(t => (
+                          <th key={t} style={{ textAlign: "center", fontSize: 11, fontWeight: 700, color: "#94A3B8", paddingBottom: 8, paddingLeft: 8, paddingRight: 8 }}>{t}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {roles.map(r => {
+                        const cells = TYPES.map(typ => {
+                          const ist = weekShifts.filter(s =>
+                            classifyShift(s.startTime, thr) === typ &&
+                            (s.roles ? s.roles.includes(r.name) : s.role === r.name)
+                          ).length;
+                          const soll = r.minStaff?.[typ];
+                          const hasSollTyp = soll != null && soll > 0;
+                          const ok = !hasSollTyp || ist >= soll;
+                          const bg = hasSollTyp ? (ok ? "#DCFCE7" : "#FEF2F2") : "#F8FAFC";
+                          const fg = hasSollTyp ? (ok ? "#15803D" : "#DC2626") : "#94A3B8";
+                          return { ist, soll, hasSollTyp, bg, fg };
+                        });
+                        return (
+                          <tr key={r.id} style={{ borderTop: "1px solid #F1F5F9" }}>
+                            <td style={{ padding: "8px 12px 8px 0", fontSize: 13 }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                                <div style={{ width: 10, height: 10, borderRadius: "50%", background: r.color, flexShrink: 0 }} />
+                                <span style={{ fontWeight: 700, color: r.color }}>{r.name}</span>
+                              </div>
+                            </td>
+                            {cells.map((c, i) => (
+                              <td key={i} style={{ textAlign: "center", padding: "6px 8px" }}>
+                                <div style={{ display: "inline-flex", alignItems: "center", gap: 3, background: c.bg, borderRadius: 7, padding: "4px 10px", fontSize: 13, fontWeight: 700, color: c.fg, minWidth: 44, justifyContent: "center" }}>
+                                  {c.ist}
+                                  {c.hasSollTyp && <span style={{ fontWeight: 400, fontSize: 11, opacity: .8 }}>/{c.soll}</span>}
+                                  {c.hasSollTyp && <span style={{ fontSize: 11 }}>{c.ist >= c.soll ? "✓" : "⚠"}</span>}
+                                </div>
+                              </td>
+                            ))}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                {!hasSoll && (
+                  <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 10 }}>
+                    Tipp: In „👷 Rollen verwalten" kannst du Mindestbesetzung pro Schichttyp eintragen.
+                  </div>
+                )}
               </div>
             );
           })()}
@@ -1555,7 +1655,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
       )}
 
       {showRoles && (
-        <RolesModal roles={roles} onSave={onUpdateRoles} onClose={() => setShowRoles(false)} />
+        <RolesModal roles={roles} thresholds={thresholds} onSave={onUpdateRoles} onClose={() => setShowRoles(false)} />
       )}
 
       {delEmpModal && (
