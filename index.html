@@ -70,17 +70,17 @@
   .wn-btn:hover { border-color: #3B82F6; color: #3B82F6; }
   .wn-today { background: #EFF6FF; border-color: #BFDBFE; color: #1D4ED8; font-weight: 600; }
 
-  .grid-wrap { background: #fff; border-radius: 14px; overflow: hidden; box-shadow: 0 2px 16px rgba(0,0,0,.07); }
-  .grid-head { display: grid; grid-template-columns: 155px repeat(7, 1fr); background: #F8FAFC; border-bottom: 2px solid #E2E8F0; }
-  .gh-name { padding: 12px 16px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #94A3B8; }
+  .grid-wrap { background: #fff; border-radius: 14px; overflow: hidden; overflow-x: auto; -webkit-overflow-scrolling: touch; box-shadow: 0 2px 16px rgba(0,0,0,.07); }
+  .grid-head { display: grid; grid-template-columns: 140px repeat(7, 90px); background: #F8FAFC; border-bottom: 2px solid #E2E8F0; min-width: max-content; width: 100%; }
+  .gh-name { padding: 12px 16px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #94A3B8; position: sticky; left: 0; background: #F8FAFC; z-index: 2; }
   .gh-day { padding: 10px 6px; text-align: center; }
   .gh-day-n { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #64748B; }
   .gh-day-d { font-size: 13px; font-weight: 700; color: #1E293B; margin-top: 2px; }
   .gh-day.today .gh-day-n, .gh-day.today .gh-day-d { color: #3B82F6; }
-  .grid-row { display: grid; grid-template-columns: 155px repeat(7, 1fr); border-bottom: 1px solid #F1F5F9; }
+  .grid-row { display: grid; grid-template-columns: 140px repeat(7, 90px); border-bottom: 1px solid #F1F5F9; min-width: max-content; width: 100%; }
   .grid-row:last-child { border-bottom: none; }
   .grid-row:hover { background: #FAFBFF; }
-  .gr-name { padding: 8px 16px; font-size: 14px; font-weight: 500; color: #1E293B; display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+  .gr-name { padding: 8px 16px; font-size: 14px; font-weight: 500; color: #1E293B; display: flex; align-items: center; justify-content: space-between; gap: 6px; position: sticky; left: 0; background: #fff; z-index: 1; }
   .gr-name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .btn-del-emp { background: none; border: none; color: #CBD5E1; font-size: 14px; cursor: pointer; padding: 2px 4px; border-radius: 4px; flex-shrink: 0; line-height: 1; }
   .btn-del-emp:hover { color: #DC2626; background: #FEF2F2; }
@@ -198,9 +198,8 @@
     .wn-btn { font-size: 12px; padding: 6px 10px; }
 
     /* Week grid: horizontal scroll */
-    .grid-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-    .grid-head { min-width: 600px; }
-    .grid-row { min-width: 600px; }
+    .grid-head { grid-template-columns: 110px repeat(7, 76px); }
+    .grid-row { grid-template-columns: 110px repeat(7, 76px); }
 
     /* Avail form */
     .avcard { padding: 14px 16px; }
@@ -1204,7 +1203,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
   const market = MARKETS.find(m => m.id === marketId);
   const [shiftStart, setShiftStart] = useState("");
   const [shiftEnd, setShiftEnd] = useState("");
-  const [shiftRole, setShiftRole] = useState("");
+  const [shiftRoles, setShiftRoles] = useState([]);
   const [timeErr, setTimeErr] = useState("");
 
   function addEmp() {
@@ -1218,9 +1217,13 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
     const sh = shiftMap[`${emp.id}:${ds}`];
     setShiftStart(sh?.startTime ?? av?.startTime ?? "08:00");
     setShiftEnd(sh?.endTime ?? av?.endTime ?? "16:00");
-    setShiftRole(sh?.role ?? "");
+    setShiftRoles(sh ? (sh.roles ?? (sh.role ? [sh.role] : [])) : []);
     setTimeErr("");
     setModal({ emp, date: ds, av, sh });
+  }
+
+  function toggleRole(name) {
+    setShiftRoles(prev => prev.includes(name) ? prev.filter(r => r !== name) : [...prev, name]);
   }
 
   function confirmShift() {
@@ -1231,7 +1234,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
       return;
     }
     if (modal.sh) onDelShift(modal.sh.id);
-    onAddShift({ employeeId: modal.emp.id, date: modal.date, startTime: shiftStart, endTime: shiftEnd, role: shiftRole });
+    onAddShift({ employeeId: modal.emp.id, date: modal.date, startTime: shiftStart, endTime: shiftEnd, roles: shiftRoles });
     setModal(null);
   }
 
@@ -1310,7 +1313,8 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                           {dayTypes.map(t => {
                             const covered = shifts.some(s =>
                               mktEmps.some(e => e.id === s.employeeId) &&
-                              s.date === ds && s.role === t.name
+                              s.date === ds &&
+                              (s.roles ? s.roles.includes(t.name) : s.role === t.name)
                             );
                             return (
                               <div key={t.id} style={{
@@ -1358,10 +1362,22 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                     return (
                       <div key={i} className="gr-cell">
                         {sh
-                          ? (() => { const roleObj = roles.find(r => r.name === sh.role); return (
-                            <div className="bl sh" onClick={() => openCell(emp, ds)} style={roleObj ? { borderColor: roleObj.color, background: roleObj.color + "18" } : undefined}>
-                              <span className="bl-time" style={roleObj ? { color: roleObj.color } : undefined}>{sh.startTime}–{sh.endTime}</span>
-                              <span className="bl-tag" style={roleObj ? { color: roleObj.color, opacity: 1, fontWeight: 700 } : undefined}>{sh.role || "Geplant"}</span>
+                          ? (() => {
+                            const shRoles = sh.roles ?? (sh.role ? [sh.role] : []);
+                            const roleObjs = shRoles.map(rn => roles.find(r => r.name === rn)).filter(Boolean);
+                            const firstRole = roleObjs[0];
+                            const borderColor = shRoles.length > 1 ? "#94A3B8" : firstRole?.color;
+                            const bgColor = shRoles.length > 1 ? "#F8FAFC" : firstRole ? firstRole.color + "18" : undefined;
+                            return (
+                            <div className="bl sh" onClick={() => openCell(emp, ds)} style={{ borderColor, background: bgColor }}>
+                              <span className="bl-time" style={{ color: shRoles.length > 1 ? "#1E293B" : firstRole?.color }}>{sh.startTime}–{sh.endTime}</span>
+                              {shRoles.length > 0
+                                ? <div style={{ display: "flex", flexDirection: "column", gap: 2, marginTop: 2 }}>
+                                    {shRoles.map(rn => { const ro = roles.find(r => r.name === rn); return (
+                                      <span key={rn} style={{ fontSize: 10, fontWeight: 700, color: ro?.color ?? "#64748B", background: ro ? ro.color + "22" : "#F1F5F9", borderRadius: 4, padding: "1px 5px", lineHeight: 1.4 }}>{rn}</span>
+                                    );})}
+                                  </div>
+                                : <span className="bl-tag">Geplant</span>}
                             </div>); })()
                           : av
                           ? <div className="bl av" onClick={() => openCell(emp, ds)}><span className="bl-time">{av.startTime}–{av.endTime}</span><span className="bl-tag">Verfügbar</span></div>
@@ -1385,7 +1401,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                 <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: "#94A3B8", marginBottom: 10 }}>Rollenbelegung diese Woche</div>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   {roles.map(r => {
-                    const count = weekShifts.filter(s => s.role === r.name).length;
+                    const count = weekShifts.filter(s => s.roles ? s.roles.includes(r.name) : s.role === r.name).length;
                     return (
                       <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 6, background: r.color + "15", border: "1.5px solid " + r.color + "44", borderRadius: 9, padding: "6px 12px" }}>
                         <div style={{ width: 10, height: 10, borderRadius: "50%", background: r.color, flexShrink: 0 }} />
@@ -1395,9 +1411,9 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                       </div>
                     );
                   })}
-                  {weekShifts.filter(s => !s.role).length > 0 && (
+                  {weekShifts.filter(s => !(s.roles ? s.roles.length > 0 : s.role)).length > 0 && (
                     <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#F1F5F9", border: "1.5px solid #E2E8F0", borderRadius: 9, padding: "6px 12px" }}>
-                      <span style={{ fontSize: 13, color: "#94A3B8" }}>Ohne Rolle · {weekShifts.filter(s => !s.role).length}×</span>
+                      <span style={{ fontSize: 13, color: "#94A3B8" }}>Ohne Rolle · {weekShifts.filter(s => !(s.roles ? s.roles.length > 0 : s.role)).length}×</span>
                     </div>
                   )}
                 </div>
@@ -1427,12 +1443,14 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
               <span className="tr-sep" style={{ fontSize: 16 }}>–</span>
               <input type="time" value={shiftEnd} onChange={e => { setShiftEnd(e.target.value); setTimeErr(""); }} style={{ padding: "8px 12px", border: "1.5px solid #E2E8F0", borderRadius: 8, fontSize: 14, color: "#1E293B", width: 120, outline: "none" }} />
             </div>
-            <div style={{ marginBottom: 6, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em", color: "#475569" }}>Abteilung / Rolle</div>
+            <div style={{ marginBottom: 6, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em", color: "#475569" }}>Abteilung / Rolle <span style={{ fontWeight: 400, color: "#94A3B8", textTransform: "none", letterSpacing: 0 }}>(mehrere wählbar)</span></div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
-              <button onClick={() => setShiftRole("")} style={{ padding: "5px 12px", borderRadius: 7, border: "1.5px solid", borderColor: shiftRole === "" ? "#94A3B8" : "#E2E8F0", background: shiftRole === "" ? "#F1F5F9" : "#fff", color: shiftRole === "" ? "#475569" : "#94A3B8", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>Keine</button>
-              {roles.map(r => (
-                <button key={r.id} onClick={() => setShiftRole(r.name)} style={{ padding: "5px 12px", borderRadius: 7, border: "1.5px solid", borderColor: shiftRole === r.name ? r.color : "#E2E8F0", background: shiftRole === r.name ? r.color + "22" : "#fff", color: shiftRole === r.name ? r.color : "#94A3B8", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>{r.name}</button>
-              ))}
+              {roles.map(r => {
+                const active = shiftRoles.includes(r.name);
+                return (
+                  <button key={r.id} onClick={() => toggleRole(r.name)} style={{ padding: "5px 12px", borderRadius: 7, border: "1.5px solid", borderColor: active ? r.color : "#E2E8F0", background: active ? r.color + "22" : "#fff", color: active ? r.color : "#94A3B8", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>{r.name}</button>
+                );
+              })}
             </div>
             {timeErr && <div className="auth-error" style={{ marginBottom: 12 }}>{timeErr}</div>}
             <div className="macts">
