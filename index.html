@@ -392,25 +392,135 @@ function getKW(date) {
 
 // ─── SEED-DATEN ──────────────────────────────────────────────────────────────
 const SEED_EMP = [
-  { id: 1, name: "Anna Müller",  marketId: 1, password: "1234", mustChangePw: false, weeklyHours: 35 },
-  { id: 2, name: "Ben Schmidt",  marketId: 1, password: "1234", mustChangePw: false, weeklyHours: 20 },
-  { id: 3, name: "Clara König",  marketId: 1, password: "1234", mustChangePw: false, weeklyHours: 40 },
-  { id: 4, name: "David Braun",  marketId: 2, password: "1234", mustChangePw: false, weeklyHours: 30 },
-  { id: 5, name: "Eva Fischer",  marketId: 2, password: "1234", mustChangePw: false, weeklyHours: 25 },
-  { id: 6, name: "Frank Weber",  marketId: 2, password: "1234", mustChangePw: false, weeklyHours: 40 },
+  // Griesheim – Vollzeit
+  { id:  1, name: "Anna Müller",        marketId: 1, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["Kasse", "TS"] },   // Kasse + auspacken
+  { id:  2, name: "Ben Schmidt",        marketId: 1, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["TS", "GT"] },      // TS + Getränke
+  { id:  3, name: "Clara König",        marketId: 1, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["Frische"] },       // nur Frische
+  { id:  7, name: "Greta Hoffmann",     marketId: 1, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["Kasse", "GT"] },   // Kasse + Getränke
+  { id:  8, name: "Hans Keller",        marketId: 1, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["GT"] },            // nur GT
+  // Weiterstadt – Vollzeit
+  { id:  4, name: "David Braun",        marketId: 2, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["Kasse", "TS"] },
+  { id:  5, name: "Eva Fischer",        marketId: 2, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["Frische"] },
+  { id:  6, name: "Frank Weber",        marketId: 2, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["TS", "GT"] },
+  { id:  9, name: "Iris Lange",         marketId: 2, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["Kasse"] },
+  { id: 10, name: "Jonas Maier",        marketId: 2, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["GT", "Kasse"] },
+  // Wolfskehlen – Vollzeit
+  { id: 11, name: "Karla Neumann",      marketId: 3, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["Kasse"] },
+  { id: 12, name: "Lukas Peters",       marketId: 3, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["TS", "GT"] },
+  { id: 13, name: "Marie Richter",      marketId: 3, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["Frische"] },
+  { id: 14, name: "Niklas Schulz",      marketId: 3, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["GT", "Kasse"] },
+  // Alsbach – Vollzeit
+  { id: 15, name: "Olivia Thomas",      marketId: 4, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["Kasse"] },
+  { id: 16, name: "Peter Ulrich",       marketId: 4, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["GT", "TS"] },
+  { id: 17, name: "Quintin Voigt",      marketId: 4, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["TS"] },
+  { id: 18, name: "Rosa Wagner",        marketId: 4, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["Frische"] },
+  // Kleingerau – Vollzeit
+  { id: 19, name: "Stefan Zimmermann",  marketId: 5, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["Kasse", "TS"] },
+  { id: 20, name: "Tanja Bauer",        marketId: 5, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["Frische"] },
+  { id: 21, name: "Udo Hartmann",       marketId: 5, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["TS", "GT"] },
+  { id: 22, name: "Vera Klein",         marketId: 5, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["GT"] },
+  // Griesheim – Teilzeit (80h/Monat ≈ 20h/Woche)
+  { id: 23, name: "Lisa Engel",         marketId: 1, password: "1234", mustChangePw: false, weeklyHours: 20, defaultRoles: ["Kasse"] },
+  { id: 24, name: "Marco Pfeiffer",     marketId: 1, password: "1234", mustChangePw: false, weeklyHours: 20, defaultRoles: ["TS", "Kasse"] },   // flexibel
+  { id: 25, name: "Sabine Roth",        marketId: 1, password: "1234", mustChangePw: false, weeklyHours: 20, defaultRoles: ["TS"] },
+  // Griesheim – Aushilfen (40h/Monat ≈ 10h/Woche)
+  { id: 26, name: "Tim Baumann",        marketId: 1, password: "1234", mustChangePw: false, weeklyHours: 10, defaultRoles: ["Kasse", "TS"] },   // flexibel
+  { id: 27, name: "Julia Sommer",       marketId: 1, password: "1234", mustChangePw: false, weeklyHours: 10, defaultRoles: ["Kasse"] },
+  { id: 28, name: "Kai Berger",         marketId: 1, password: "1234", mustChangePw: false, weeklyHours: 10, defaultRoles: ["GT"] },
+  { id: 29, name: "Lena Krause",        marketId: 1, password: "1234", mustChangePw: false, weeklyHours: 10, defaultRoles: ["Frische"] },       // nur Frische
 ];
+
+// ArbZG: ab 6h Arbeit 30min Pause, ab 9h 45min
+function calcBreakMin(startTime, endTime) {
+  const [sh, sm] = startTime.split(":").map(Number);
+  const [eh, em] = endTime.split(":").map(Number);
+  const h = ((eh * 60 + em) - (sh * 60 + sm)) / 60;
+  return h >= 9 ? 45 : h >= 6 ? 30 : 0;
+}
 
 function mkSeedAvail() {
   const mon = getMonday(new Date());
   return [
-    [1,0,"08:00","16:00"],[1,1,"08:00","16:00"],[1,3,"08:00","16:00"],[1,4,"08:00","16:00"],
-    [2,0,"10:00","18:00"],[2,2,"10:00","18:00"],[2,4,"10:00","18:00"],
-    [3,1,"06:00","14:00"],[3,2,"06:00","14:00"],[3,3,"06:00","14:00"],[3,5,"08:00","12:00"],
-    [4,0,"08:00","16:00"],[4,1,"08:00","16:00"],[4,2,"08:00","16:00"],
-    [5,0,"12:00","20:00"],[5,3,"12:00","20:00"],[5,4,"12:00","20:00"],
-    [6,1,"08:00","16:00"],[6,2,"08:00","16:00"],[6,4,"08:00","16:00"],
+    // Griesheim (mkt 1)
+    [1,0,"07:00","15:30"],[1,1,"07:00","15:30"],[1,3,"07:00","15:30"],[1,4,"07:00","15:30"],
+    [2,0,"10:00","18:30"],[2,2,"10:00","18:30"],[2,4,"10:00","18:30"],[2,5,"08:00","13:00"],
+    [3,1,"06:00","14:30"],[3,2,"06:00","14:30"],[3,3,"06:00","14:30"],[3,5,"08:00","12:00"],
+    [7,0,"12:00","20:00"],[7,2,"12:00","20:00"],[7,4,"12:00","20:00"],
+    [8,1,"07:00","15:30"],[8,3,"07:00","15:30"],[8,4,"07:00","15:30"],
+    // Weiterstadt (mkt 2)
+    [4,0,"08:00","16:30"],[4,1,"08:00","16:30"],[4,2,"08:00","16:30"],
+    [5,0,"13:00","20:00"],[5,3,"13:00","20:00"],[5,4,"13:00","20:00"],
+    [6,1,"07:00","15:30"],[6,2,"07:00","15:30"],[6,4,"07:00","15:30"],
+    [9,0,"09:00","17:30"],[9,2,"09:00","17:30"],[9,4,"09:00","17:30"],
+    [10,1,"13:00","20:00"],[10,3,"13:00","20:00"],[10,5,"08:00","14:00"],
+    // Wolfskehlen (mkt 3)
+    [11,0,"07:00","15:30"],[11,1,"07:00","15:30"],[11,3,"07:00","15:30"],
+    [12,1,"10:00","18:30"],[12,2,"10:00","18:30"],[12,4,"10:00","18:30"],
+    [13,0,"13:00","20:00"],[13,2,"13:00","20:00"],[13,4,"13:00","20:00"],
+    [14,3,"07:00","15:30"],[14,4,"07:00","15:30"],[14,5,"08:00","13:00"],
+    // Alsbach (mkt 4)
+    [15,0,"07:00","15:30"],[15,2,"07:00","15:30"],[15,4,"07:00","15:30"],
+    [16,1,"09:00","17:30"],[16,3,"09:00","17:30"],[16,5,"08:00","14:00"],
+    [17,0,"13:00","20:00"],[17,2,"13:00","20:00"],[17,4,"13:00","20:00"],
+    [18,1,"07:00","15:30"],[18,2,"07:00","15:30"],[18,4,"07:00","15:30"],
+    // Kleingerau (mkt 5)
+    [19,0,"07:00","15:30"],[19,1,"07:00","15:30"],[19,3,"07:00","15:30"],
+    [20,2,"10:00","18:30"],[20,4,"10:00","18:30"],[20,5,"08:00","13:00"],
+    [21,0,"13:00","20:00"],[21,2,"13:00","20:00"],[21,4,"13:00","20:00"],
+    [22,1,"07:00","15:30"],[22,3,"07:00","15:30"],[22,5,"08:00","14:00"],
+    // Griesheim Teilzeit (20h/Woche, 2-3 Tage)
+    [23,0,"09:00","14:00"],[23,2,"09:00","14:00"],[23,4,"09:00","14:00"],
+    [24,1,"13:00","18:00"],[24,3,"13:00","18:00"],[24,5,"10:00","15:00"],
+    [25,0,"07:00","12:00"],[25,2,"07:00","12:00"],[25,4,"07:00","12:00"],
+    // Griesheim Aushilfen (10h/Woche, 1-2 Tage)
+    [26,5,"10:00","15:00"],[26,6,"10:00","15:00"],
+    [27,3,"15:00","20:00"],[27,5,"15:00","20:00"],
+    [28,0,"16:00","20:00"],[28,6,"12:00","17:00"],
+    [29,2,"14:00","19:00"],[29,5,"14:00","19:00"],
   ].map(([empId, day, s, e]) => ({
     id: uid(), employeeId: empId, date: fmtISO(addDays(mon, day)), startTime: s, endTime: e,
+  }));
+}
+
+// KW 28 2026: Mo 6. Juli – So 12. Juli
+const KW28_MON = new Date(2026, 6, 6);
+function mkKW28Avail() {
+  // Griesheim-Vollzeit: alle 5 Tage verfügbar
+  // Teilzeit: 3 Tage, Aushilfen: 1-2 Tage (Sa/So bevorzugt)
+  return [
+    [1, 0,"07:00","15:30"],[1,1,"07:00","15:30"],[1,2,"07:00","15:30"],[1,3,"07:00","15:30"],[1,4,"07:00","15:30"],
+    [2, 0,"10:00","18:30"],[2,1,"10:00","18:30"],[2,2,"10:00","18:30"],[2,3,"10:00","18:30"],[2,4,"10:00","18:30"],[2,5,"08:00","13:00"],
+    [3, 0,"06:00","14:30"],[3,1,"06:00","14:30"],[3,2,"06:00","14:30"],[3,3,"06:00","14:30"],[3,5,"08:00","12:00"],
+    [7, 0,"12:00","20:00"],[7,1,"12:00","20:00"],[7,2,"12:00","20:00"],[7,4,"12:00","20:00"],
+    [8, 1,"07:00","15:30"],[8,2,"07:00","15:30"],[8,3,"07:00","15:30"],[8,4,"07:00","15:30"],
+    // Teilzeit
+    [23,0,"09:00","14:00"],[23,2,"09:00","14:00"],[23,4,"09:00","14:00"],
+    [24,1,"13:00","18:00"],[24,3,"13:00","18:00"],[24,5,"10:00","15:00"],
+    [25,0,"07:00","12:00"],[25,2,"07:00","12:00"],[25,4,"07:00","12:00"],
+    // Aushilfen
+    [26,5,"10:00","15:00"],[26,6,"10:00","15:00"],
+    [27,3,"15:00","20:00"],[27,5,"15:00","20:00"],
+    [28,0,"16:00","20:00"],[28,6,"12:00","17:00"],
+    [29,2,"14:00","19:00"],[29,5,"14:00","19:00"],
+  ].map(([empId, day, s, e]) => ({
+    id: uid(), employeeId: empId, date: fmtISO(addDays(KW28_MON, day)), startTime: s, endTime: e,
+  }));
+}
+
+// Ein paar manuell vorgeplante Schichten für KW 28 (damit Auto-Plan Lücken füllen kann)
+function mkKW28Shifts() {
+  // Mo: Anna + Ben bereits eingeplant; Di: Clara + Hans; Mi: Greta
+  return [
+    { empId:1, day:0, s:"07:00", e:"15:30" }, // Anna Mo
+    { empId:2, day:0, s:"10:00", e:"18:30" }, // Ben Mo
+    { empId:3, day:1, s:"06:00", e:"14:30" }, // Clara Di
+    { empId:8, day:1, s:"07:00", e:"15:30" }, // Hans Di
+    { empId:7, day:2, s:"12:00", e:"20:00" }, // Greta Mi
+    { empId:1, day:3, s:"07:00", e:"15:30" }, // Anna Do
+  ].map(({ empId, day, s, e }) => ({
+    id: uid(), employeeId: empId,
+    date: fmtISO(addDays(KW28_MON, day)),
+    startTime: s, endTime: e, roles: ["Kasse"],
   }));
 }
 
@@ -423,8 +533,8 @@ function App() {
   const [myEmployeeId, setMyEmployeeId] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [employees, setEmployees] = usePersistedState("employees", SEED_EMP);
-  const [availability, setAvailability] = usePersistedState("availability", mkSeedAvail);
-  const [shifts, setShifts] = usePersistedState("shifts", []);
+  const [availability, setAvailability] = usePersistedState("availability", () => [...mkSeedAvail(), ...mkKW28Avail()]);
+  const [shifts, setShifts] = usePersistedState("shifts", mkKW28Shifts);
   const [weekStart, setWeekStart] = useState(getMonday(new Date()));
   const weekDates = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
 
@@ -499,7 +609,8 @@ function App() {
     <ManagerView {...common} marketId={marketId} onMarketChange={isAdmin ? setMarketId : null} isAdmin={isAdmin}
       onAddShift={s => setShifts(p => [...p, { ...s, id: uid() }])}
       onDelShift={id => setShifts(p => p.filter(s => s.id !== id))}
-      onAddEmployee={(name, pw, wh) => setEmployees(p => [...p, { id: uid(), name, marketId, password: pw, mustChangePw: true, weeklyHours: wh || null }])}
+      onAddEmployee={(name, pw, wh, defRoles) => setEmployees(p => [...p, { id: uid(), name, marketId, password: pw, mustChangePw: true, weeklyHours: wh || null, defaultRoles: defRoles ?? [] }])}
+      onUpdateEmployee={(id, changes) => setEmployees(p => p.map(e => e.id === id ? { ...e, ...changes } : e))}
       onDeleteEmployee={empId => {
         setEmployees(p => p.filter(e => e.id !== empId));
         setAvailability(p => p.filter(a => a.employeeId !== empId));
@@ -517,6 +628,7 @@ function App() {
       roles={extractRolesConfig(rolesConfig[marketId]).roles}
       thresholds={extractRolesConfig(rolesConfig[marketId]).thresholds}
       onUpdateRoles={(roles, thresholds) => setRolesConfig(p => ({ ...p, [marketId]: { roles, thresholds } }))}
+      onBulkAddShifts={newShifts => setShifts(p => [...p, ...newShifts])}
       onResetData={resetAllData}
     />
   );
@@ -1275,7 +1387,7 @@ function RolesModal({ roles, thresholds: initThresholds, onSave, onClose }) {
 }
 
 // ─── MARKTLEITUNG-ANSICHT ─────────────────────────────────────────────────────
-function ManagerView({ marketId, onMarketChange, isAdmin, employees, availability, shifts, weekStart, weekDates, onWeekChange, onAddShift, onDelShift, onAddEmployee, onDeleteEmployee, onImportAvailability, deliveryConfig, onUpdateDelivery, roles, thresholds, onUpdateRoles, onLogout, onResetData }) {
+function ManagerView({ marketId, onMarketChange, isAdmin, employees, availability, shifts, weekStart, weekDates, onWeekChange, onAddShift, onDelShift, onAddEmployee, onDeleteEmployee, onUpdateEmployee, onImportAvailability, deliveryConfig, onUpdateDelivery, roles, thresholds, onUpdateRoles, onBulkAddShifts, onLogout, onResetData }) {
   const [sbOpen, setSbOpen] = useState(false);
   const [modal, setModal] = useState(null);
   const [delEmpModal, setDelEmpModal] = useState(null);
@@ -1283,9 +1395,12 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
   const [showScan, setShowScan] = useState(false);
   const [showDelivery, setShowDelivery] = useState(false);
   const [showRoles, setShowRoles] = useState(false);
+  const [tlDay, setTlDay] = useState(() => { const d = new Date().getDay(); return d === 0 ? 6 : d - 1; });
   const [newEmpName, setNewEmpName] = useState("");
   const [newEmpPw, setNewEmpPw] = useState("");
   const [newEmpHours, setNewEmpHours] = useState("");
+  const [newEmpRoles, setNewEmpRoles] = useState([]);
+  const [editEmp, setEditEmp] = useState(null); // { id, name, weeklyHours, defaultRoles }
 
   const mktEmps = employees.filter(e => e.marketId === marketId);
   const weekStrs = weekDates.map(fmtISO);
@@ -1319,8 +1434,18 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
 
   function addEmp() {
     if (!newEmpName.trim() || !newEmpPw) return;
-    onAddEmployee(newEmpName.trim(), newEmpPw, newEmpHours ? parseInt(newEmpHours) : null);
-    setShowAddEmp(false); setNewEmpName(""); setNewEmpPw(""); setNewEmpHours("");
+    onAddEmployee(newEmpName.trim(), newEmpPw, newEmpHours ? parseInt(newEmpHours) : null, newEmpRoles);
+    setShowAddEmp(false); setNewEmpName(""); setNewEmpPw(""); setNewEmpHours(""); setNewEmpRoles([]);
+  }
+
+  function toggleNewEmpRole(rname) {
+    setNewEmpRoles(prev => prev.includes(rname) ? prev.filter(r => r !== rname) : [...prev, rname]);
+  }
+
+  function saveEditEmp() {
+    if (!editEmp) return;
+    onUpdateEmployee(editEmp.id, { weeklyHours: editEmp.weeklyHours ? parseInt(editEmp.weeklyHours) : null, defaultRoles: editEmp.defaultRoles ?? [] });
+    setEditEmp(null);
   }
 
   function openCell(emp, ds) {
@@ -1402,6 +1527,68 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
             ) : null;
           })()}
 
+          {/* Auto-Plan Button über der Tabelle */}
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 6 }}>
+            <button
+              title="Planungsvorschlag für diese Woche erstellen"
+              onClick={() => {
+                if (!confirm("Planungsvorschlag erstellen? Bereits geplante Schichten dieser Woche werden NICHT überschrieben.")) return;
+                const defaultRole = roles[0]?.name ?? "";
+                const weekStrsLocal = weekDates.map(fmtISO);
+                const toMin = t => { const [h,m] = t.split(":").map(Number); return h*60+m; };
+                const fmtT = m => `${String(Math.floor(m/60)).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
+
+                // Stunden-Tracking: bereits eingeplante Minuten pro MA diese Woche
+                const planned = {};
+                mktEmps.forEach(e => { planned[e.id] = 0; });
+                shifts.filter(s => weekStrsLocal.includes(s.date) && mktEmps.some(e => e.id === s.employeeId))
+                  .forEach(s => { planned[s.employeeId] = (planned[s.employeeId] ?? 0) + (toMin(s.endTime) - toMin(s.startTime)); });
+
+                const target = e => (e.weeklyHours ?? 0) * 60;
+                const priority = e => e.weeklyHours >= 35 ? 0 : e.weeklyHours > 10 ? 1 : 2;
+                const newShifts = [];
+
+                weekDates.forEach(d => {
+                  const ds = fmtISO(d);
+                  const alreadyPlanned = new Set(
+                    [...shifts, ...newShifts].filter(s => s.date === ds && mktEmps.some(e => e.id === s.employeeId)).map(s => s.employeeId)
+                  );
+                  const avail = availability
+                    .filter(a => a.date === ds && mktEmps.some(e => e.id === a.employeeId) && !alreadyPlanned.has(a.employeeId))
+                    .map(a => {
+                      const emp = mktEmps.find(e => e.id === a.employeeId);
+                      return { a, emp, deficit: target(emp) - (planned[emp.id] ?? 0) };
+                    })
+                    .filter(x => x.deficit > 0)
+                    .sort((x, y) => priority(x.emp) !== priority(y.emp) ? priority(x.emp) - priority(y.emp) : y.deficit - x.deficit);
+
+                  avail.forEach(({ a, emp }) => {
+                    const remaining = target(emp) - (planned[emp.id] ?? 0);
+                    if (remaining <= 0) return;
+                    let endMin = toMin(a.endTime);
+                    // Aushilfen max 5h am Stück
+                    if (emp.weeklyHours <= 10) endMin = Math.min(endMin, toMin(a.startTime) + Math.min(remaining, 300));
+                    const shiftMin = endMin - toMin(a.startTime);
+                    if (shiftMin < 60) return;
+                    const assignedRoles = (emp.defaultRoles ?? []).length > 0 ? emp.defaultRoles : [defaultRole];
+                    newShifts.push({ id: uid(), employeeId: emp.id, date: ds, startTime: a.startTime, endTime: fmtT(endMin), roles: assignedRoles });
+                    planned[emp.id] = (planned[emp.id] ?? 0) + shiftMin;
+                  });
+                });
+
+                if (newShifts.length === 0) {
+                  alert("Keine neuen Schichten vorgeschlagen – alle verfügbaren Mitarbeiter sind bereits eingeplant oder haben ihre Stunden erreicht.");
+                  return;
+                }
+                onBulkAddShifts(newShifts);
+                alert(`✅ ${newShifts.length} Schichten eingetragen.\n\nRolle „${defaultRole}" wurde zugewiesen – bitte ggf. anpassen.`);
+              }}
+              style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, background: "#3B82F6", color: "#fff", border: "none", borderRadius: 8, padding: "7px 14px", cursor: "pointer", boxShadow: "0 2px 8px rgba(59,130,246,.35)" }}
+            >
+              ✨ Auto-Plan
+            </button>
+          </div>
+
           <div className="grid-wrap">
             <div className="grid-head">
               <div className="gh-name">Mitarbeiter</div>
@@ -1459,13 +1646,21 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                 return (
                 <div key={emp.id} className="grid-row">
                   <div className="gr-name">
-                    <div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
                       <div className="gr-name-text">{emp.name}</div>
-                      <div style={{ fontSize: 11, marginTop: 2, color: istColor, fontWeight: 600 }}>
-                        Ist: {empIst}h{emp.weeklyHours ? ` / Soll: ${emp.weeklyHours}h` : ""}
+                      <div style={{ fontSize: 11, marginTop: 1, color: istColor, fontWeight: 600 }}>
+                        {empIst}h{emp.weeklyHours ? `/${emp.weeklyHours}h` : ""}
                       </div>
+                      {(emp.defaultRoles ?? []).length > 0 && (
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 2, marginTop: 2 }}>
+                          {(emp.defaultRoles).map(rn => { const ro = roles.find(r => r.name === rn); return (
+                            <span key={rn} style={{ fontSize: 9, fontWeight: 700, color: ro?.color ?? "#64748B", background: (ro?.color ?? "#64748B") + "22", borderRadius: 3, padding: "0 4px" }}>{rn}</span>
+                          ); })}
+                        </div>
+                      )}
                     </div>
-                    <button className="btn-del-emp" title="Mitarbeiter entfernen" onClick={() => setDelEmpModal(emp)}>×</button>
+                    <button className="btn-del-emp" title="Bearbeiten" style={{ background: "#EFF6FF", color: "#3B82F6", fontSize: 13 }}
+                      onClick={() => setEditEmp({ id: emp.id, name: emp.name, weeklyHours: emp.weeklyHours ?? "", defaultRoles: emp.defaultRoles ?? [] })}>✏️</button>
                   </div>
                   {weekDates.map((d, i) => {
                     const ds = fmtISO(d);
@@ -1506,69 +1701,192 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
             <span><span className="legend-dot dot-sh" />Geplant — klicken zum Bearbeiten oder Löschen</span>
           </div>
 
-          {roles.length > 0 && (() => {
+          {(() => {
             const thr = thresholds ?? DEFAULT_THRESHOLDS;
             const TYPES = ["Früh", "Mittel", "Spät"];
+            const toMin = t => { const [h,m] = t.split(":").map(Number); return h*60+m; };
+            const fmtMin = m => `${String(Math.floor(m/60)).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
+            const ds = fmtISO(weekDates[tlDay]);
+            const dayShifts = shifts
+              .filter(s => s.date === ds && mktEmps.some(e => e.id === s.employeeId))
+              .sort((a,b) => a.startTime.localeCompare(b.startTime));
             const weekShifts = shifts.filter(s => mktEmps.some(e => e.id === s.employeeId) && weekStrs.includes(s.date));
-            const hasSoll = roles.some(r => r.minStaff && Object.keys(r.minStaff).length > 0);
+            const hasSoll = roles.length > 0 && roles.some(r => r.minStaff && Object.keys(r.minStaff).length > 0);
+
+            // Timeline Berechnung
+            const allMins = dayShifts.flatMap(s => [toMin(s.startTime), toMin(s.endTime)]);
+            const rawMin = allMins.length ? Math.min(...allMins) : toMin("07:00");
+            const rawMax = allMins.length ? Math.max(...allMins) : toMin("20:00");
+            const axisMin = Math.floor((rawMin - 30) / 60) * 60;
+            const axisMax = Math.ceil((rawMax + 30) / 60) * 60;
+            const axisRange = axisMax - axisMin;
+            const pct = min => ((min - axisMin) / axisRange * 100).toFixed(2) + "%";
+            const ticks = [];
+            for (let m = axisMin; m <= axisMax; m += 60) ticks.push(m);
+
+            // Aktuelle Uhrzeit
+            const nowMin = new Date().getHours()*60 + new Date().getMinutes();
+            const isToday = ds === fmtISO(new Date());
+
             return (
-              <div style={{ marginTop: 16, background: "#fff", borderRadius: 14, padding: "14px 18px", boxShadow: "0 2px 16px rgba(0,0,0,.07)" }}>
-                <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: "#94A3B8", marginBottom: 12 }}>
-                  Auslastung diese Woche
-                  <span style={{ fontWeight: 400, color: "#CBD5E1", marginLeft: 8, textTransform: "none", letterSpacing: 0 }}>
-                    Früh &lt; {thr.frueh} · Mittel bis {thr.spaet} · Spät ab {thr.spaet}
-                  </span>
+              <div style={{ marginTop: 16, background: "#fff", borderRadius: 14, padding: "16px 18px", boxShadow: "0 2px 16px rgba(0,0,0,.07)" }}>
+
+                {/* Kopfzeile + Tage-Tabs */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: "#94A3B8" }}>
+                    Tagesplan & Auslastung
+                  </div>
+                  <div style={{ display: "flex", gap: 4 }}>
+                    {DAY_NAMES.map((n, i) => (
+                      <button key={i} onClick={() => setTlDay(i)} style={{
+                        padding: "4px 8px", borderRadius: 6, border: "1.5px solid",
+                        borderColor: tlDay === i ? "#3B82F6" : "#E2E8F0",
+                        background: tlDay === i ? "#EFF6FF" : "#fff",
+                        color: tlDay === i ? "#1D4ED8" : "#64748B",
+                        fontWeight: 700, fontSize: 11, cursor: "pointer"
+                      }}>{n}</button>
+                    ))}
+                  </div>
                 </div>
-                <div style={{ overflowX: "auto" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 340 }}>
-                    <thead>
-                      <tr>
-                        <th style={{ textAlign: "left", fontSize: 11, fontWeight: 700, color: "#94A3B8", paddingBottom: 8, paddingRight: 12 }}>Abteilung</th>
-                        {TYPES.map(t => (
-                          <th key={t} style={{ textAlign: "center", fontSize: 11, fontWeight: 700, color: "#94A3B8", paddingBottom: 8, paddingLeft: 8, paddingRight: 8 }}>{t}</th>
+
+                {/* Zusammenfassung */}
+                {dayShifts.length > 0 && (
+                  <div style={{ display: "flex", gap: 16, marginBottom: 14, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 12, color: "#475569" }}>
+                      <b style={{ color: "#1E293B" }}>{dayShifts.length}</b> Mitarbeiter eingeplant
+                    </span>
+                    <span style={{ fontSize: 12, color: "#475569" }}>
+                      Erster kommt <b style={{ color: "#1E293B" }}>{dayShifts[0].startTime}</b>
+                    </span>
+                    <span style={{ fontSize: 12, color: "#475569" }}>
+                      Letzter geht <b style={{ color: "#1E293B" }}>{[...dayShifts].sort((a,b) => b.endTime.localeCompare(a.endTime))[0].endTime}</b>
+                    </span>
+                  </div>
+                )}
+
+                {dayShifts.length === 0 ? (
+                  <div style={{ fontSize: 13, color: "#94A3B8", padding: "20px 0", textAlign: "center" }}>
+                    Keine Schichten für diesen Tag eingeplant.
+                  </div>
+                ) : (
+                  <div style={{ overflowX: "auto" }}>
+                    <div style={{ minWidth: 500 }}>
+                      {/* Zeitachse */}
+                      <div style={{ display: "flex", marginLeft: 130, marginBottom: 4, position: "relative", height: 18 }}>
+                        {ticks.map(m => (
+                          <div key={m} style={{ position: "absolute", left: pct(m), transform: "translateX(-50%)", fontSize: 10, color: "#94A3B8", fontWeight: 600, whiteSpace: "nowrap" }}>
+                            {fmtMin(m)}
+                          </div>
                         ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {roles.map(r => {
-                        const cells = TYPES.map(typ => {
-                          const ist = weekShifts.filter(s =>
-                            classifyShift(s.startTime, thr) === typ &&
-                            (s.roles ? s.roles.includes(r.name) : s.role === r.name)
-                          ).length;
-                          const soll = r.minStaff?.[typ];
-                          const hasSollTyp = soll != null && soll > 0;
-                          const ok = !hasSollTyp || ist >= soll;
-                          const bg = hasSollTyp ? (ok ? "#DCFCE7" : "#FEF2F2") : "#F8FAFC";
-                          const fg = hasSollTyp ? (ok ? "#15803D" : "#DC2626") : "#94A3B8";
-                          return { ist, soll, hasSollTyp, bg, fg };
-                        });
+                      </div>
+                      {/* Gantt-Zeilen */}
+                      {dayShifts.map(s => {
+                        const emp = mktEmps.find(e => e.id === s.employeeId);
+                        const shRoles = s.roles ?? (s.role ? [s.role] : []);
+                        const firstRoleObj = roles.find(r => r.name === shRoles[0]);
+                        const barColor = firstRoleObj?.color ?? "#3B82F6";
+                        const startM = toMin(s.startTime);
+                        const endM = toMin(s.endTime);
+                        const breakMin = calcBreakMin(s.startTime, s.endTime);
+                        const breakPct = breakMin > 0 ? ((endM - startM - breakMin) / axisRange * 100).toFixed(2) + "%" : null;
+                        const widthPct = ((endM - startM) / axisRange * 100).toFixed(2) + "%";
+                        const leftPct = pct(startM);
                         return (
-                          <tr key={r.id} style={{ borderTop: "1px solid #F1F5F9" }}>
-                            <td style={{ padding: "8px 12px 8px 0", fontSize: 13 }}>
-                              <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                                <div style={{ width: 10, height: 10, borderRadius: "50%", background: r.color, flexShrink: 0 }} />
-                                <span style={{ fontWeight: 700, color: r.color }}>{r.name}</span>
-                              </div>
-                            </td>
-                            {cells.map((c, i) => (
-                              <td key={i} style={{ textAlign: "center", padding: "6px 8px" }}>
-                                <div style={{ display: "inline-flex", alignItems: "center", gap: 3, background: c.bg, borderRadius: 7, padding: "4px 10px", fontSize: 13, fontWeight: 700, color: c.fg, minWidth: 44, justifyContent: "center" }}>
-                                  {c.ist}
-                                  {c.hasSollTyp && <span style={{ fontWeight: 400, fontSize: 11, opacity: .8 }}>/{c.soll}</span>}
-                                  {c.hasSollTyp && <span style={{ fontSize: 11 }}>{c.ist >= c.soll ? "✓" : "⚠"}</span>}
+                          <div key={s.id} style={{ display: "flex", alignItems: "center", marginBottom: 5 }}>
+                            {/* Name */}
+                            <div style={{ width: 130, flexShrink: 0, fontSize: 12, fontWeight: 600, color: "#1E293B", paddingRight: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {emp?.name ?? "?"}
+                            </div>
+                            {/* Balken-Bereich */}
+                            <div style={{ flex: 1, position: "relative", height: 28 }}>
+                              {/* Hintergrund-Gitter */}
+                              {ticks.map(m => (
+                                <div key={m} style={{ position: "absolute", left: pct(m), top: 0, bottom: 0, width: 1, background: "#F1F5F9" }} />
+                              ))}
+                              {/* Jetzt-Linie */}
+                              {isToday && nowMin >= axisMin && nowMin <= axisMax && (
+                                <div style={{ position: "absolute", left: pct(nowMin), top: -2, bottom: -2, width: 2, background: "#EF4444", borderRadius: 1, zIndex: 3 }} />
+                              )}
+                              {/* Schichtbalken */}
+                              <div style={{ position: "absolute", left: leftPct, width: widthPct, top: 2, bottom: 2, borderRadius: 6, background: barColor + "33", border: "1.5px solid " + barColor, display: "flex", alignItems: "center", overflow: "hidden", zIndex: 1 }}>
+                                {/* Zeiten */}
+                                <span style={{ fontSize: 10, fontWeight: 700, color: barColor, paddingLeft: 5, whiteSpace: "nowrap" }}>{s.startTime}</span>
+                                {/* Rollen-Pills */}
+                                <div style={{ display: "flex", gap: 2, marginLeft: 4, flex: 1, overflow: "hidden" }}>
+                                  {shRoles.map(rn => { const ro = roles.find(r => r.name === rn); return (
+                                    <span key={rn} style={{ fontSize: 9, fontWeight: 700, color: ro?.color ?? barColor, background: (ro?.color ?? barColor) + "22", borderRadius: 3, padding: "0 4px", whiteSpace: "nowrap" }}>{rn}</span>
+                                  );})}
                                 </div>
-                              </td>
-                            ))}
-                          </tr>
+                                {/* Pause-Badge */}
+                                {breakMin > 0 && (
+                                  <span style={{ fontSize: 9, fontWeight: 700, color: "#F59E0B", background: "#FEF3C7", borderRadius: 3, padding: "1px 4px", marginRight: 4, whiteSpace: "nowrap", flexShrink: 0 }}>
+                                    P{breakMin}
+                                  </span>
+                                )}
+                                <span style={{ fontSize: 10, fontWeight: 700, color: barColor, paddingRight: 5, whiteSpace: "nowrap", flexShrink: 0 }}>{s.endTime}</span>
+                              </div>
+                            </div>
+                          </div>
                         );
                       })}
-                    </tbody>
-                  </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* ArbZG Hinweis */}
+                <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 10, borderTop: "1px solid #F1F5F9", paddingTop: 8 }}>
+                  🛡 ArbZG: P30 = 30 Min. Pause ab 6h · P45 = 45 Min. ab 9h
+                  {isToday && <span style={{ marginLeft: 12 }}>🔴 = aktuelle Uhrzeit</span>}
                 </div>
-                {!hasSoll && (
-                  <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 10 }}>
-                    Tipp: In „👷 Rollen verwalten" kannst du Mindestbesetzung pro Schichttyp eintragen.
+
+                {/* Auslastung pro Rolle + Schichttyp */}
+                {roles.length > 0 && (
+                  <div style={{ marginTop: 16, borderTop: "1px solid #F1F5F9", paddingTop: 14 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: "#94A3B8", marginBottom: 10 }}>
+                      Wochenbelegung nach Schichttyp
+                      <span style={{ fontWeight: 400, color: "#CBD5E1", marginLeft: 8, textTransform: "none", letterSpacing: 0 }}>
+                        Früh &lt; {thr.frueh} · Spät ab {thr.spaet}
+                      </span>
+                    </div>
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 300 }}>
+                        <thead>
+                          <tr>
+                            <th style={{ textAlign: "left", fontSize: 11, fontWeight: 700, color: "#94A3B8", paddingBottom: 6, paddingRight: 12 }}>Abt.</th>
+                            {TYPES.map(t => <th key={t} style={{ textAlign: "center", fontSize: 11, fontWeight: 700, color: "#94A3B8", paddingBottom: 6, paddingLeft: 6, paddingRight: 6 }}>{t}</th>)}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {roles.map(r => {
+                            const cells = TYPES.map(typ => {
+                              const ist = weekShifts.filter(s => classifyShift(s.startTime, thr) === typ && (s.roles ? s.roles.includes(r.name) : s.role === r.name)).length;
+                              const soll = r.minStaff?.[typ];
+                              const hasSollTyp = soll != null && soll > 0;
+                              const ok = !hasSollTyp || ist >= soll;
+                              return { ist, soll, hasSollTyp, ok };
+                            });
+                            return (
+                              <tr key={r.id} style={{ borderTop: "1px solid #F1F5F9" }}>
+                                <td style={{ padding: "6px 12px 6px 0", fontSize: 12 }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                    <div style={{ width: 8, height: 8, borderRadius: "50%", background: r.color, flexShrink: 0 }} />
+                                    <span style={{ fontWeight: 700, color: r.color }}>{r.name}</span>
+                                  </div>
+                                </td>
+                                {cells.map((c, i) => (
+                                  <td key={i} style={{ textAlign: "center", padding: "5px 6px" }}>
+                                    <div style={{ display: "inline-flex", alignItems: "center", gap: 2, background: c.hasSollTyp ? (c.ok ? "#DCFCE7" : "#FEF2F2") : "#F8FAFC", borderRadius: 6, padding: "3px 8px", fontSize: 12, fontWeight: 700, color: c.hasSollTyp ? (c.ok ? "#15803D" : "#DC2626") : "#94A3B8", minWidth: 36, justifyContent: "center" }}>
+                                      {c.ist}{c.hasSollTyp && <span style={{ fontWeight: 400, fontSize: 10, opacity: .8 }}>/{c.soll}</span>}{c.hasSollTyp && (c.ok ? "✓" : "⚠")}
+                                    </div>
+                                  </td>
+                                ))}
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    {!hasSoll && <div style={{ fontSize: 11, color: "#CBD5E1", marginTop: 8 }}>Tipp: In „👷 Rollen verwalten" Mindestbesetzung pro Schichttyp eintragen.</div>}
                   </div>
                 )}
               </div>
@@ -1636,10 +1954,74 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                 onChange={e => setNewEmpHours(e.target.value)}
                 onKeyDown={e => e.key === "Enter" && addEmp()} />
             </div>
+            {roles.length > 0 && (
+              <div className="field">
+                <label>Feste Abteilung(en)</label>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 4 }}>
+                  {roles.map(r => {
+                    const on = newEmpRoles.includes(r.name);
+                    return (
+                      <label key={r.id} style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer", fontSize: 13,
+                        background: on ? r.color + "22" : "#F8FAFC", border: `1.5px solid ${on ? r.color : "#E2E8F0"}`,
+                        borderRadius: 7, padding: "4px 10px", userSelect: "none" }}>
+                        <input type="checkbox" checked={on} onChange={() => toggleNewEmpRole(r.name)} style={{ accentColor: r.color }} />
+                        <span style={{ fontWeight: 700, color: on ? r.color : "#64748B" }}>{r.name}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             <div className="pw-hint">Der Mitarbeiter wird beim ersten Login aufgefordert, ein eigenes Passwort zu setzen.</div>
             <div className="macts">
-              <button className="btn-cancel" onClick={() => { setShowAddEmp(false); setNewEmpName(""); setNewEmpPw(""); setNewEmpHours(""); }}>Abbrechen</button>
+              <button className="btn-cancel" onClick={() => { setShowAddEmp(false); setNewEmpName(""); setNewEmpPw(""); setNewEmpHours(""); setNewEmpRoles([]); }}>Abbrechen</button>
               <button className="btn-ok" disabled={!newEmpName.trim() || !newEmpPw} onClick={addEmp}>Anlegen</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mitarbeiter bearbeiten Modal */}
+      {editEmp && (
+        <div className="ov" onClick={() => setEditEmp(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-t">Mitarbeiter bearbeiten</div>
+            <div className="modal-s" style={{ fontWeight: 700, color: "#1E293B" }}>{editEmp.name}</div>
+            <div className="field"><label>Wochenstunden-Soll</label>
+              <input type="number" placeholder="z.B. 40" min="1" max="48" value={editEmp.weeklyHours}
+                onChange={e => setEditEmp(p => ({ ...p, weeklyHours: e.target.value }))} />
+            </div>
+            {roles.length > 0 && (
+              <div className="field">
+                <label>Feste Abteilung(en)</label>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 4 }}>
+                  {roles.map(r => {
+                    const on = (editEmp.defaultRoles ?? []).includes(r.name);
+                    return (
+                      <label key={r.id} style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer", fontSize: 13,
+                        background: on ? r.color + "22" : "#F8FAFC", border: `1.5px solid ${on ? r.color : "#E2E8F0"}`,
+                        borderRadius: 7, padding: "4px 10px", userSelect: "none" }}>
+                        <input type="checkbox" checked={on} onChange={() =>
+                          setEditEmp(p => ({ ...p, defaultRoles: on ? p.defaultRoles.filter(x => x !== r.name) : [...(p.defaultRoles ?? []), r.name] }))
+                        } style={{ accentColor: r.color }} />
+                        <span style={{ fontWeight: 700, color: on ? r.color : "#64748B" }}>{r.name}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid #FEE2E2" }}>
+              <button
+                onClick={() => { setEditEmp(null); setDelEmpModal(employees.find(e => e.id === editEmp.id)); }}
+                style={{ width: "100%", padding: "8px", borderRadius: 8, border: "1.5px solid #FCA5A5", background: "#FFF1F2", color: "#DC2626", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
+              >
+                🗑 {editEmp.name} entfernen
+              </button>
+            </div>
+            <div className="macts">
+              <button className="btn-cancel" onClick={() => setEditEmp(null)}>Abbrechen</button>
+              <button className="btn-ok" onClick={saveEditEmp}>Speichern</button>
             </div>
           </div>
         </div>
