@@ -345,12 +345,13 @@ const TYPE_COLORS = ["#3B82F6","#10B981","#F59E0B","#EF4444","#8B5CF6","#EC4899"
 
 const ROLE_COLORS = ["#6366F1","#0EA5E9","#10B981","#F59E0B","#EF4444","#8B5CF6","#EC4899","#14B8A6"];
 const DEFAULT_ROLES = [
-  { id: 1, name: "Kasse",      color: "#6366F1", minStaff: {} },
-  { id: 2, name: "TS",         color: "#0EA5E9", minStaff: {} },
-  { id: 3, name: "GT",         color: "#8B5CF6", minStaff: {} },
-  { id: 4, name: "Frische",    color: "#10B981", minStaff: {} },
-  { id: 5, name: "Metzgerei",  color: "#EF4444", minStaff: {} },
-  { id: 6, name: "Bäckerei",   color: "#F59E0B", minStaff: {} },
+  { id: 1, name: "Kasse",        color: "#6366F1", minStaff: {} },
+  { id: 2, name: "TS",           color: "#0EA5E9", minStaff: {} },
+  { id: 3, name: "GT",           color: "#8B5CF6", minStaff: {} },
+  { id: 4, name: "Frische",      color: "#10B981", minStaff: {} },
+  { id: 5, name: "Metzgerei",    color: "#EF4444", minStaff: {} },
+  { id: 6, name: "Bäckerei",     color: "#F59E0B", minStaff: {} },
+  { id: 7, name: "Marktleiter",  color: "#1E293B", minStaff: {} },
 ];
 const DEFAULT_THRESHOLDS = { frueh: "11:00", spaet: "14:00" };
 const DEFAULT_MARKET_HOURS = { open: "07:00", close: "20:00", managerStart: "06:30", managerEnd: "20:30" };
@@ -395,32 +396,32 @@ function getKW(date) {
 // ─── SEED-DATEN ──────────────────────────────────────────────────────────────
 const SEED_EMP = [
   // Griesheim – Vollzeit
-  { id:  1, name: "Anna Müller",        marketId: 1, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["Kasse","TS","GT","Frische"], isMarktleiter: true },
-  { id:  2, name: "Ben Schmidt",        marketId: 1, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["TS", "GT"] },
+  { id:  1, name: "Anna Müller",        marketId: 1, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["Marktleiter"], isMarktleiter: true },
+  { id:  2, name: "Ben Schmidt",        marketId: 1, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["TS", "GT"], isSchliessKraft: true },
   { id:  3, name: "Clara König",        marketId: 1, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["Frische"] },
-  { id:  7, name: "Greta Hoffmann",     marketId: 1, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["Kasse","TS","GT","Frische"], isMarktleiter: true },
-  { id:  8, name: "Hans Keller",        marketId: 1, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["GT"] },
+  { id:  7, name: "Greta Hoffmann",     marketId: 1, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["Marktleiter"], isMarktleiter: true },
+  { id:  8, name: "Hans Keller",        marketId: 1, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["GT"], isSchliessKraft: true },
   // Weiterstadt – Vollzeit
-  { id:  4, name: "David Braun",        marketId: 2, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["Kasse","TS","GT","Frische"], isMarktleiter: true },
+  { id:  4, name: "David Braun",        marketId: 2, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["Marktleiter"], isMarktleiter: true },
   { id:  5, name: "Eva Fischer",        marketId: 2, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["Frische"] },
-  { id:  6, name: "Frank Weber",        marketId: 2, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["TS", "GT"] },
-  { id:  9, name: "Iris Lange",         marketId: 2, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["Kasse"] },
+  { id:  6, name: "Frank Weber",        marketId: 2, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["TS", "GT"], isSchliessKraft: true },
+  { id:  9, name: "Iris Lange",         marketId: 2, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["Kasse"], isSchliessKraft: true },
   { id: 10, name: "Jonas Maier",        marketId: 2, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["GT", "Kasse"] },
   // Wolfskehlen – Vollzeit
-  { id: 11, name: "Karla Neumann",      marketId: 3, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["Kasse","TS","GT","Frische"], isMarktleiter: true },
-  { id: 12, name: "Lukas Peters",       marketId: 3, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["TS", "GT"] },
+  { id: 11, name: "Karla Neumann",      marketId: 3, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["Marktleiter"], isMarktleiter: true },
+  { id: 12, name: "Lukas Peters",       marketId: 3, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["TS", "GT"], isSchliessKraft: true },
   { id: 13, name: "Marie Richter",      marketId: 3, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["Frische"] },
-  { id: 14, name: "Niklas Schulz",      marketId: 3, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["GT", "Kasse"] },
+  { id: 14, name: "Niklas Schulz",      marketId: 3, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["GT", "Kasse"], isSchliessKraft: true },
   // Alsbach – Vollzeit
-  { id: 15, name: "Olivia Thomas",      marketId: 4, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["Kasse","TS","GT","Frische"], isMarktleiter: true },
-  { id: 16, name: "Peter Ulrich",       marketId: 4, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["GT", "TS"] },
+  { id: 15, name: "Olivia Thomas",      marketId: 4, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["Marktleiter"], isMarktleiter: true },
+  { id: 16, name: "Peter Ulrich",       marketId: 4, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["GT", "TS"], isSchliessKraft: true },
   { id: 17, name: "Quintin Voigt",      marketId: 4, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["TS"] },
-  { id: 18, name: "Rosa Wagner",        marketId: 4, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["Frische"] },
+  { id: 18, name: "Rosa Wagner",        marketId: 4, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["Frische"], isSchliessKraft: true },
   // Kleingerau – Vollzeit
-  { id: 19, name: "Stefan Zimmermann",  marketId: 5, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["Kasse","TS","GT","Frische"], isMarktleiter: true },
+  { id: 19, name: "Stefan Zimmermann",  marketId: 5, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["Marktleiter"], isMarktleiter: true },
   { id: 20, name: "Tanja Bauer",        marketId: 5, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["Frische"] },
-  { id: 21, name: "Udo Hartmann",       marketId: 5, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["TS", "GT"] },
-  { id: 22, name: "Vera Klein",         marketId: 5, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["GT"] },
+  { id: 21, name: "Udo Hartmann",       marketId: 5, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["TS", "GT"], isSchliessKraft: true },
+  { id: 22, name: "Vera Klein",         marketId: 5, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["GT"], isSchliessKraft: true },
   // Griesheim – Teilzeit (80h/Monat ≈ 20h/Woche)
   { id: 23, name: "Lisa Engel",         marketId: 1, password: "1234", mustChangePw: false, weeklyHours: 20, defaultRoles: ["Kasse"] },
   { id: 24, name: "Marco Pfeiffer",     marketId: 1, password: "1234", mustChangePw: false, weeklyHours: 20, defaultRoles: ["TS", "Kasse"] },   // flexibel
@@ -1439,7 +1440,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
   const [autoPlanProposal, setAutoPlanProposal] = useState([]); // vorgeschlagene Schichten (noch nicht gespeichert)
   const [hoverAlt, setHoverAlt] = useState(null); // { empId, date, alts, x, y }
 
-  const mktEmps = useMemo(() => employees.filter(e => e.marketId === marketId), [employees, marketId]);
+  const mktEmps = useMemo(() => employees.filter(e => e.marketId === marketId).sort((a, b) => (b.isMarktleiter ? 1 : 0) - (a.isMarktleiter ? 1 : 0)), [employees, marketId]);
   const weekStrs = useMemo(() => weekDates.map(fmtISO), [weekDates]);
   const mktEmpIdSet = useMemo(() => new Set(mktEmps.map(e => e.id)), [mktEmps]);
   const roleByName = useMemo(() => Object.fromEntries(roles.map(r => [r.name, r])), [roles]);
@@ -1490,7 +1491,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
 
   function saveEditEmp() {
     if (!editEmp) return;
-    onUpdateEmployee(editEmp.id, { weeklyHours: editEmp.weeklyHours ? parseInt(editEmp.weeklyHours) : null, defaultRoles: editEmp.defaultRoles ?? [], isMarktleiter: !!editEmp.isMarktleiter });
+    onUpdateEmployee(editEmp.id, { weeklyHours: editEmp.weeklyHours ? parseInt(editEmp.weeklyHours) : null, defaultRoles: editEmp.defaultRoles ?? [], isMarktleiter: !!editEmp.isMarktleiter, isSchliessKraft: !!editEmp.isSchliessKraft });
     setEditEmp(null);
   }
 
@@ -1622,22 +1623,22 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                     .map(a => ({ a, emp: mktEmps.find(e => e.id === a.employeeId) }))
                     .filter(x => x.emp && target(x.emp) - (planned[x.emp.id] ?? 0) > 0);
 
-                  // Schritt 1: Marktleiter — Öffnung (06:30) und Schließung (20:30) sicherstellen
+                  // Schritt 1: Marktleiter = Schließkraft — immer für die Schließung einplanen
                   const mlAvail = dayAvail.filter(x => x.emp.isMarktleiter)
-                    .sort((x, y) => x.a.startTime.localeCompare(y.a.startTime));
-
-                  // ML für Öffnung: verfügbar spätestens ab managerStart
-                  const mlOpen = mlAvail.find(x => x.a.startTime <= mh.managerStart);
-                  if (mlOpen) {
-                    planOne(mlOpen.a, mlOpen.emp, mh.managerStart, toMin(mh.managerEnd) <= toMin(mlOpen.a.endTime) ? toMin(mh.managerEnd) : null);
-                    alreadyPlanned.add(mlOpen.emp.id);
-                  }
-                  // ML für Schließung: noch nicht geplant, verfügbar bis managerEnd
-                  const mlClose = mlAvail.find(x => !alreadyPlanned.has(x.emp.id) && x.a.endTime >= mh.managerEnd);
+                    .sort((x, y) => x.a.endTime.localeCompare(y.a.endTime) * -1); // längste Verfügbarkeit zuerst
+                  const mlClose = mlAvail.find(x => x.a.endTime >= mh.managerEnd);
                   if (mlClose) {
                     planOne(mlClose.a, mlClose.emp, null, toMin(mh.managerEnd));
                     alreadyPlanned.add(mlClose.emp.id);
                   }
+
+                  // Schritt 2: Früh-SK + Spät-SK aus echten Schließkräften (isSchliessKraft), sonst Vollzeit
+                  const skAvail = dayAvail.filter(x => !x.emp.isMarktleiter && !alreadyPlanned.has(x.emp.id))
+                    .sort((x, y) => ((x.emp.isSchliessKraft ? 0 : 1) - (y.emp.isSchliessKraft ? 0 : 1)) || priority(x.emp) - priority(y.emp));
+                  const fruehSK = skAvail.find(x => x.a.startTime <= mh.open);
+                  if (fruehSK) { planOne(fruehSK.a, fruehSK.emp); alreadyPlanned.add(fruehSK.emp.id); }
+                  const spaetSK = skAvail.find(x => !alreadyPlanned.has(x.emp.id) && x.a.startTime >= thr.spaet);
+                  if (spaetSK) { planOne(spaetSK.a, spaetSK.emp); alreadyPlanned.add(spaetSK.emp.id); }
 
                   // Schritt 2: Kasse-Balance — Früh UND Spät abdecken
                   const kasseAvail = dayAvail
@@ -1747,23 +1748,15 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                 <div key={emp.id} className="grid-row">
                   <div className="gr-name">
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                        <span className="gr-name-text">{emp.name}</span>
-                        {emp.isMarktleiter && <span style={{ fontSize: 9, fontWeight: 800, background: "#0F172A", color: "#fff", borderRadius: 4, padding: "1px 5px", letterSpacing: ".04em", flexShrink: 0 }}>ML</span>}
+                      <span className="gr-name-text" style={{ fontWeight: 600, fontSize: 13 }}>{emp.name}</span>
+                      <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 2 }}>
+                        <span style={{ fontSize: 11, color: istColor, fontWeight: 700 }}>{empIst}h{emp.weeklyHours ? `/${emp.weeklyHours}h` : ""}</span>
+                        {emp.isMarktleiter && <span style={{ fontSize: 9, fontWeight: 800, background: "#0F172A", color: "#fff", borderRadius: 4, padding: "1px 5px", letterSpacing: ".04em" }}>ML</span>}
+                        {emp.isSchliessKraft && !emp.isMarktleiter && <span style={{ fontSize: 9, fontWeight: 800, background: "#0369A1", color: "#fff", borderRadius: 4, padding: "1px 5px", letterSpacing: ".04em" }}>SK</span>}
+                        <button className="btn-del-emp" title="Bearbeiten" style={{ background: "#EFF6FF", color: "#3B82F6", fontSize: 11, padding: "1px 5px", borderRadius: 4 }}
+                          onClick={() => setEditEmp({ id: emp.id, name: emp.name, weeklyHours: emp.weeklyHours ?? "", defaultRoles: emp.defaultRoles ?? [], isMarktleiter: emp.isMarktleiter, isSchliessKraft: emp.isSchliessKraft })}>✏️</button>
                       </div>
-                      <div style={{ fontSize: 11, marginTop: 1, color: istColor, fontWeight: 600 }}>
-                        {empIst}h{emp.weeklyHours ? `/${emp.weeklyHours}h` : ""}
-                      </div>
-                      {(emp.defaultRoles ?? []).length > 0 && (
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 2, marginTop: 2 }}>
-                          {(emp.defaultRoles ?? []).map(rn => { const ro = roleByName[rn]; return (
-                            <span key={rn} style={{ fontSize: 9, fontWeight: 700, color: ro?.color ?? "#64748B", background: (ro?.color ?? "#64748B") + "22", borderRadius: 3, padding: "0 4px" }}>{rn}</span>
-                          ); })}
-                        </div>
-                      )}
                     </div>
-                    <button className="btn-del-emp" title="Bearbeiten" style={{ background: "#EFF6FF", color: "#3B82F6", fontSize: 13 }}
-                      onClick={() => setEditEmp({ id: emp.id, name: emp.name, weeklyHours: emp.weeklyHours ?? "", defaultRoles: emp.defaultRoles ?? [] })}>✏️</button>
                   </div>
                   {weekDates.map((d, i) => {
                     const ds = fmtISO(d);
@@ -1776,7 +1769,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                       const roleObjs = shRoles.map(rn => roleByName[rn]).filter(Boolean);
                       const firstRole = roleObjs[0];
                       const borderColor = isProposal ? "#3B82F6" : shRoles.length > 1 ? "#94A3B8" : firstRole?.color;
-                      const bgColor = isProposal ? "#EFF6FF" : shRoles.length > 1 ? "#F8FAFC" : firstRole ? firstRole.color + "18" : undefined;
+                      const bgColor = isProposal ? "#EFF6FF" : shRoles.length > 1 ? "#F1F5F9" : firstRole ? firstRole.color + "30" : undefined;
                       return (
                         <div
                           className={`bl ${isProposal ? "" : "sh"}`}
@@ -1808,7 +1801,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                           {shRoles.length > 0
                             ? <div style={{ display: "flex", flexDirection: "column", gap: 2, marginTop: 2 }}>
                                 {shRoles.map(rn => { const ro = roleByName[rn]; return (
-                                  <span key={rn} style={{ fontSize: 10, fontWeight: 700, color: ro?.color ?? "#64748B", background: ro ? ro.color + "22" : "#F1F5F9", borderRadius: 4, padding: "1px 5px", lineHeight: 1.4 }}>{rn}</span>
+                                  <span key={rn} style={{ fontSize: 10, fontWeight: 800, color: "#fff", background: ro?.color ?? "#64748B", borderRadius: 4, padding: "1px 6px", lineHeight: 1.4 }}>{rn}</span>
                                 );})}
                               </div>
                             : <span className="bl-tag">{isProposal ? "Vorschlag" : "Geplant"}</span>}
@@ -1957,7 +1950,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                         return (
                           <div key={s.id} style={{ display: "flex", alignItems: "center", marginBottom: 5 }}>
                             {/* Name */}
-                            <div style={{ width: 130, flexShrink: 0, fontSize: 12, fontWeight: 600, color: "#1E293B", paddingRight: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            <div style={{ width: 160, flexShrink: 0, fontSize: 12, fontWeight: 600, color: "#1E293B", paddingRight: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                               {emp?.name ?? "?"}
                             </div>
                             {/* Balken-Bereich */}
@@ -1971,22 +1964,22 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                                 <div style={{ position: "absolute", left: pct(nowMin), top: -2, bottom: -2, width: 2, background: "#EF4444", borderRadius: 1, zIndex: 3 }} />
                               )}
                               {/* Schichtbalken */}
-                              <div style={{ position: "absolute", left: leftPct, width: widthPct, top: 2, bottom: 2, borderRadius: 6, background: barColor + "33", border: "1.5px solid " + barColor, display: "flex", alignItems: "center", overflow: "hidden", zIndex: 1 }}>
+                              <div style={{ position: "absolute", left: leftPct, width: widthPct, top: 2, bottom: 2, borderRadius: 6, background: barColor, border: "2px solid " + barColor, display: "flex", alignItems: "center", overflow: "hidden", zIndex: 1 }}>
                                 {/* Zeiten */}
-                                <span style={{ fontSize: 10, fontWeight: 700, color: barColor, paddingLeft: 5, whiteSpace: "nowrap" }}>{s.startTime}</span>
+                                <span style={{ fontSize: 10, fontWeight: 700, color: "#fff", paddingLeft: 5, whiteSpace: "nowrap" }}>{s.startTime}</span>
                                 {/* Rollen-Pills */}
                                 <div style={{ display: "flex", gap: 2, marginLeft: 4, flex: 1, overflow: "hidden" }}>
-                                  {shRoles.map(rn => { const ro = roleByName[rn]; return (
-                                    <span key={rn} style={{ fontSize: 9, fontWeight: 700, color: ro?.color ?? barColor, background: (ro?.color ?? barColor) + "22", borderRadius: 3, padding: "0 4px", whiteSpace: "nowrap" }}>{rn}</span>
-                                  );})}
+                                  {shRoles.map(rn => (
+                                    <span key={rn} style={{ fontSize: 9, fontWeight: 800, color: barColor, background: "rgba(255,255,255,0.85)", borderRadius: 3, padding: "0 4px", whiteSpace: "nowrap" }}>{rn}</span>
+                                  ))}
                                 </div>
                                 {/* Pause-Badge */}
                                 {breakMin > 0 && (
-                                  <span style={{ fontSize: 9, fontWeight: 700, color: "#F59E0B", background: "#FEF3C7", borderRadius: 3, padding: "1px 4px", marginRight: 4, whiteSpace: "nowrap", flexShrink: 0 }}>
+                                  <span style={{ fontSize: 9, fontWeight: 700, color: "#92400E", background: "#FEF3C7", borderRadius: 3, padding: "1px 4px", marginRight: 4, whiteSpace: "nowrap", flexShrink: 0 }}>
                                     P{breakMin}
                                   </span>
                                 )}
-                                <span style={{ fontSize: 10, fontWeight: 700, color: barColor, paddingRight: 5, whiteSpace: "nowrap", flexShrink: 0 }}>{s.endTime}</span>
+                                <span style={{ fontSize: 10, fontWeight: 700, color: "#fff", paddingRight: 5, whiteSpace: "nowrap", flexShrink: 0 }}>{s.endTime}</span>
                               </div>
                             </div>
                           </div>
@@ -2153,16 +2146,29 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
               <span style={{ fontWeight: 700, color: "#1E293B" }}>{editEmp.name}</span>
               {editEmp.isMarktleiter && <span style={{ fontSize: 9, fontWeight: 800, background: "#0F172A", color: "#fff", borderRadius: 4, padding: "1px 5px" }}>ML</span>}
             </div>
-            <div className="field" style={{ marginBottom: 10 }}>
-              <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", userSelect: "none" }}>
-                <input type="checkbox" checked={!!editEmp.isMarktleiter}
-                  onChange={e => setEditEmp(p => ({ ...p, isMarktleiter: e.target.checked,
-                    defaultRoles: e.target.checked ? roles.map(r => r.name) : (p.defaultRoles ?? []) }))}
-                  style={{ width: 16, height: 16, accentColor: "#0F172A" }} />
-                <span style={{ fontWeight: 700, fontSize: 13, color: "#1E293B" }}>Marktleiter / Allrounder</span>
-                <span style={{ fontSize: 11, color: "#94A3B8" }}>(Öffnen 06:30 · Schließen 20:30)</span>
-              </label>
-            </div>
+            {isAdmin && (
+              <div className="field" style={{ marginBottom: 10 }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", userSelect: "none" }}>
+                  <input type="checkbox" checked={!!editEmp.isMarktleiter}
+                    onChange={e => setEditEmp(p => ({ ...p, isMarktleiter: e.target.checked, isSchliessKraft: e.target.checked ? false : p.isSchliessKraft,
+                      defaultRoles: e.target.checked ? ["Marktleiter"] : (p.defaultRoles ?? []).filter(r => r !== "Marktleiter") }))}
+                    style={{ width: 16, height: 16, accentColor: "#0F172A" }} />
+                  <span style={{ fontWeight: 700, fontSize: 13, color: "#1E293B" }}>Marktleiter</span>
+                  <span style={{ fontSize: 11, color: "#94A3B8" }}>(Öffnen 06:30 · Schließen 20:30)</span>
+                </label>
+              </div>
+            )}
+            {!editEmp.isMarktleiter && (
+              <div className="field" style={{ marginBottom: 10 }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", userSelect: "none" }}>
+                  <input type="checkbox" checked={!!editEmp.isSchliessKraft}
+                    onChange={e => setEditEmp(p => ({ ...p, isSchliessKraft: e.target.checked }))}
+                    style={{ width: 16, height: 16, accentColor: "#0369A1" }} />
+                  <span style={{ fontWeight: 700, fontSize: 13, color: "#1E293B" }}>Schließkraft</span>
+                  <span style={{ fontSize: 11, color: "#94A3B8" }}>(kann Früh- u. Spätschicht schließen)</span>
+                </label>
+              </div>
+            )}
             <div className="field"><label>Wochenstunden-Soll</label>
               <input type="number" placeholder="z.B. 40" min="1" max="48" value={editEmp.weeklyHours}
                 onChange={e => setEditEmp(p => ({ ...p, weeklyHours: e.target.value }))} />
@@ -2251,7 +2257,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                     </div>
                     <div style={{ display: "flex", gap: 2 }}>
                       {altRoles.map(rn => { const ro = roleByName[rn]; return (
-                        <span key={rn} style={{ fontSize: 9, fontWeight: 700, color: ro?.color ?? "#64748B", background: (ro?.color ?? "#94A3B8") + "22", borderRadius: 3, padding: "1px 4px" }}>{rn}</span>
+                        <span key={rn} style={{ fontSize: 9, fontWeight: 800, color: "#fff", background: ro?.color ?? "#64748B", borderRadius: 3, padding: "1px 4px" }}>{rn}</span>
                       );})}
                     </div>
                   </div>
