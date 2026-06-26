@@ -1438,7 +1438,6 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
   const [newEmpRoles, setNewEmpRoles] = useState([]);
   const [editEmp, setEditEmp] = useState(null); // { id, name, weeklyHours, defaultRoles }
   const [autoPlanProposal, setAutoPlanProposal] = useState([]); // vorgeschlagene Schichten (noch nicht gespeichert)
-  const [hoverAlt, setHoverAlt] = useState(null); // { empId, date, alts, x, y }
 
   const mktEmps = useMemo(() => employees.filter(e => e.marketId === marketId).sort((a, b) => (b.isMarktleiter ? 1 : 0) - (a.isMarktleiter ? 1 : 0)), [employees, marketId]);
   const weekStrs = useMemo(() => weekDates.map(fmtISO), [weekDates]);
@@ -1677,13 +1676,13 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
           {autoPlanProposal.length > 0 && (
             <div style={{ background: "#EFF6FF", border: "1.5px solid #93C5FD", borderRadius: 10, padding: "10px 16px", marginBottom: 10, marginTop: 8, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
               <span style={{ fontSize: 13, fontWeight: 700, color: "#1D4ED8", flex: 1 }}>
-                ✨ {autoPlanProposal.length} Schichten vorgeschlagen — hover für Alternativen
+                ✨ {autoPlanProposal.length} Schichten vorgeschlagen
               </span>
-              <button onClick={() => { onBulkAddShifts(autoPlanProposal); setAutoPlanProposal([]); setHoverAlt(null); }}
+              <button onClick={() => { onBulkAddShifts(autoPlanProposal); setAutoPlanProposal([]); }}
                 style={{ background: "#3B82F6", color: "#fff", border: "none", borderRadius: 7, padding: "6px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
                 ✅ Übernehmen
               </button>
-              <button onClick={() => { setAutoPlanProposal([]); setHoverAlt(null); }}
+              <button onClick={() => { setAutoPlanProposal([]); }}
                 style={{ background: "#fff", color: "#64748B", border: "1.5px solid #E2E8F0", borderRadius: 7, padding: "6px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
                 ✖ Verwerfen
               </button>
@@ -1774,21 +1773,6 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                         <div
                           className={`bl ${isProposal ? "" : "sh"}`}
                           onClick={() => isProposal ? null : openCell(emp, ds)}
-                          onMouseEnter={isProposal ? (e) => {
-                            // Alternativen berechnen: andere verfügbare MAs an diesem Tag für diese Rollen
-                            const toMin = t => { const [h,m] = t.split(":").map(Number); return h*60+m; };
-                            const alreadyUsed = new Set([...shifts, ...autoPlanProposal].filter(x => x.date === ds && mktEmpIdSet.has(x.employeeId)).map(x => x.employeeId));
-                            alreadyUsed.delete(emp.id);
-                            const alts = availability
-                              .filter(a => a.date === ds && mktEmpIdSet.has(a.employeeId) && !alreadyUsed.has(a.employeeId))
-                              .map(a => ({ a, emp: mktEmps.find(x => x.id === a.employeeId) }))
-                              .filter(x => x.emp && x.emp.id !== emp.id)
-                              .filter(x => shRoles.length === 0 || shRoles.some(r => (x.emp.defaultRoles ?? []).includes(r)))
-                              .slice(0, 5);
-                            const rect = e.currentTarget.getBoundingClientRect();
-                            setHoverAlt({ empId: emp.id, date: ds, alts, x: rect.left, y: rect.bottom + 6 });
-                          } : null}
-                          onMouseLeave={isProposal ? () => setHoverAlt(null) : null}
                           style={{
                             borderColor, background: bgColor, cursor: isProposal ? "default" : "pointer",
                             borderStyle: isProposal ? "dashed" : "solid", opacity: isProposal ? 0.92 : 1,
@@ -2214,59 +2198,6 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
           onImport={onImportAvailability} onClose={() => setShowScan(false)} />
       )}
 
-      {/* Hover-Alternativen Popover */}
-      {hoverAlt && (
-        <div onMouseEnter={() => setHoverAlt(hoverAlt)} onMouseLeave={() => setHoverAlt(null)}
-          style={{ position: "fixed", left: Math.min(hoverAlt.x, window.innerWidth - 240), top: hoverAlt.y, zIndex: 9999,
-            background: "#fff", borderRadius: 10, boxShadow: "0 8px 32px rgba(0,0,0,.18)", padding: "12px 14px", minWidth: 220, maxWidth: 280 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: "#94A3B8", marginBottom: 8 }}>
-            Alternativen für {hoverAlt.date}
-          </div>
-          {hoverAlt.alts.length === 0
-            ? <div style={{ fontSize: 13, color: "#94A3B8" }}>Keine weiteren Mitarbeiter verfügbar</div>
-            : hoverAlt.alts.map(({ a, emp: alt }) => {
-                const altRoles = alt.defaultRoles ?? [];
-                return (
-                  <div key={alt.id}
-                    onClick={() => {
-                      // Vorschlag für diesen MA durch den Alternativ-MA ersetzen
-                      const toMin = t => { const [h,m] = t.split(":").map(Number); return h*60+m; };
-                      const fmtT = m => `${String(Math.floor(m/60)).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
-                      const orig = autoPlanProposal.find(s => s.employeeId === hoverAlt.empId && s.date === hoverAlt.date);
-                      if (!orig) return;
-                      const assignedRoles = altRoles.length > 0 ? altRoles : orig.roles;
-                      const remaining = ((alt.weeklyHours ?? 0) * 60);
-                      let endMin = toMin(a.endTime);
-                      if (alt.weeklyHours <= 10) endMin = Math.min(endMin, toMin(a.startTime) + Math.min(remaining, 300));
-                      const newProp = autoPlanProposal.map(s =>
-                        s.employeeId === hoverAlt.empId && s.date === hoverAlt.date
-                          ? { ...s, id: uid(), employeeId: alt.id, startTime: a.startTime, endTime: fmtT(endMin), roles: assignedRoles }
-                          : s
-                      );
-                      setAutoPlanProposal(newProp);
-                      setHoverAlt(null);
-                    }}
-                    style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 8px", borderRadius: 7,
-                      cursor: "pointer", marginBottom: 3, background: "#F8FAFC", border: "1px solid #E2E8F0" }}
-                    onMouseEnter={e => e.currentTarget.style.background = "#EFF6FF"}
-                    onMouseLeave={e => e.currentTarget.style.background = "#F8FAFC"}
-                  >
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: "#1E293B" }}>{alt.name}</div>
-                      <div style={{ fontSize: 11, color: "#64748B" }}>{a.startTime}–{a.endTime} · {alt.weeklyHours}h/W</div>
-                    </div>
-                    <div style={{ display: "flex", gap: 2 }}>
-                      {altRoles.map(rn => { const ro = roleByName[rn]; return (
-                        <span key={rn} style={{ fontSize: 9, fontWeight: 800, color: "#fff", background: ro?.color ?? "#64748B", borderRadius: 3, padding: "1px 4px" }}>{rn}</span>
-                      );})}
-                    </div>
-                  </div>
-                );
-              })
-          }
-          <div style={{ fontSize: 10, color: "#CBD5E1", marginTop: 8 }}>Klick = Vorschlag austauschen</div>
-        </div>
-      )}
 
       {showDelivery && (
         <DeliveryModal config={deliveryConfig} onSave={onUpdateDelivery} onClose={() => setShowDelivery(false)} />
