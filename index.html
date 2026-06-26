@@ -251,6 +251,41 @@
 let _id = 400;
 const uid = () => ++_id;
 
+// ─── PERSISTENZ (localStorage) ───────────────────────────────────────────────
+const LS_PREFIX  = "marktplan:";
+const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
+
+// Hebt den uid-Zähler über alle bereits vergebenen IDs aus geladenen Daten,
+// damit neue Einträge nach einem Reload nicht mit gespeicherten IDs kollidieren.
+function bumpIdFrom(value) {
+  const walk = v => {
+    if (Array.isArray(v)) v.forEach(walk);
+    else if (v && typeof v === "object") {
+      if (typeof v.id === "number" && v.id > _id) _id = v.id;
+      Object.values(v).forEach(walk);
+    }
+  };
+  walk(value);
+}
+
+function loadLS(key, fallback) {
+  try {
+    const raw = localStorage.getItem(LS_PREFIX + key);
+    if (raw == null) return typeof fallback === "function" ? fallback() : fallback;
+    const parsed = JSON.parse(raw);
+    bumpIdFrom(parsed);
+    return parsed;
+  } catch { return typeof fallback === "function" ? fallback() : fallback; }
+}
+
+function usePersistedState(key, initial) {
+  const [val, setVal] = useState(() => loadLS(key, initial));
+  useEffect(() => {
+    try { localStorage.setItem(LS_PREFIX + key, JSON.stringify(val)); } catch {}
+  }, [key, val]);
+  return [val, setVal];
+}
+
 const MARKETS = [
   { id: 1, name: "Griesheim" },
   { id: 2, name: "Weiterstadt" },
@@ -373,9 +408,9 @@ function App() {
   const [marketId, setMarketId] = useState(null);
   const [myEmployeeId, setMyEmployeeId] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [employees, setEmployees] = useState(SEED_EMP);
-  const [availability, setAvailability] = useState(mkSeedAvail());
-  const [shifts, setShifts] = useState([]);
+  const [employees, setEmployees] = usePersistedState("employees", SEED_EMP);
+  const [availability, setAvailability] = usePersistedState("availability", mkSeedAvail);
+  const [shifts, setShifts] = usePersistedState("shifts", []);
   const [weekStart, setWeekStart] = useState(getMonday(new Date()));
   const weekDates = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
 
@@ -412,12 +447,22 @@ function App() {
   };
 
   const common = { employees, availability, shifts, weekStart, weekDates, onWeekChange: setWeekStart, onLogout: handleLogout };
-  const [deliveryConfig, setDeliveryConfig] = useState(() =>
+  const [deliveryConfig, setDeliveryConfig] = usePersistedState("deliveryConfig", () =>
     Object.fromEntries(MARKETS.map(m => [m.id, defaultDelivery()]))
   );
-  const [rolesConfig, setRolesConfig] = useState(() =>
+  const [rolesConfig, setRolesConfig] = usePersistedState("rolesConfig", () =>
     Object.fromEntries(MARKETS.map(m => [m.id, DEFAULT_ROLES.map(r => ({ ...r }))]))
   );
+
+  useEffect(() => { try { localStorage.setItem(LS_PREFIX + "version", LS_VERSION); } catch {} }, []);
+
+  function resetAllData() {
+    try {
+      ["employees", "availability", "shifts", "deliveryConfig", "rolesConfig", "version"]
+        .forEach(k => localStorage.removeItem(LS_PREFIX + k));
+    } catch {}
+    location.reload();
+  }
 
   if (page === "login") return <LoginScreen employees={employees} onLogin={handleLogin} />;
 
@@ -457,6 +502,7 @@ function App() {
       onUpdateDelivery={cfg => setDeliveryConfig(p => ({ ...p, [marketId]: cfg }))}
       roles={rolesConfig[marketId] || DEFAULT_ROLES}
       onUpdateRoles={roles => setRolesConfig(p => ({ ...p, [marketId]: roles }))}
+      onResetData={resetAllData}
     />
   );
 }
@@ -593,7 +639,7 @@ function SetPasswordView({ name, onSave }) {
 }
 
 // ─── SIDEBAR ──────────────────────────────────────────────────────────────────
-function Sidebar({ role, marketId, isAdmin, onMarketChange, onLogout, empName, onChangePw, sbOpen, onClose, onShowDelivery, onShowScan, onShowAddEmp, onShowRoles }) {
+function Sidebar({ role, marketId, isAdmin, onMarketChange, onLogout, empName, onChangePw, sbOpen, onClose, onShowDelivery, onShowScan, onShowAddEmp, onShowRoles, onResetData }) {
   const market = MARKETS.find(m => m.id === marketId);
   const action = (fn) => () => { fn?.(); onClose(); };
   return (
@@ -643,6 +689,13 @@ function Sidebar({ role, marketId, isAdmin, onMarketChange, onLogout, empName, o
         {role === "employee" && <>
           <div className="sb-section">Einstellungen</div>
           <div className="sb-item" onClick={onChangePw}><span className="sb-dot" />Passwort ändern</div>
+        </>}
+        {isAdmin && onResetData && <>
+          <div className="sb-section">System</div>
+          <div className="sb-item" style={{ color: "#F87171" }}
+            onClick={() => { if (confirm("Wirklich ALLE gespeicherten Daten löschen und auf die Demo-Daten zurücksetzen? Das kann nicht rückgängig gemacht werden.")) onResetData(); }}>
+            <span style={{ fontSize: 13 }}>🗑️</span> Daten zurücksetzen
+          </div>
         </>}
       </div>
       <div className="sb-footer">
@@ -1164,7 +1217,7 @@ function RolesModal({ roles, onSave, onClose }) {
 }
 
 // ─── MARKTLEITUNG-ANSICHT ─────────────────────────────────────────────────────
-function ManagerView({ marketId, onMarketChange, isAdmin, employees, availability, shifts, weekStart, weekDates, onWeekChange, onAddShift, onDelShift, onAddEmployee, onDeleteEmployee, onImportAvailability, deliveryConfig, onUpdateDelivery, roles, onUpdateRoles, onLogout }) {
+function ManagerView({ marketId, onMarketChange, isAdmin, employees, availability, shifts, weekStart, weekDates, onWeekChange, onAddShift, onDelShift, onAddEmployee, onDeleteEmployee, onImportAvailability, deliveryConfig, onUpdateDelivery, roles, onUpdateRoles, onLogout, onResetData }) {
   const [sbOpen, setSbOpen] = useState(false);
   const [modal, setModal] = useState(null);
   const [delEmpModal, setDelEmpModal] = useState(null);
@@ -1253,7 +1306,8 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
         onShowDelivery={() => setShowDelivery(true)}
         onShowScan={() => setShowScan(true)}
         onShowAddEmp={() => setShowAddEmp(true)}
-        onShowRoles={() => setShowRoles(true)} />
+        onShowRoles={() => setShowRoles(true)}
+        onResetData={onResetData} />
       <div className="main">
         <div className="ph">
           <div className="ph-left">
