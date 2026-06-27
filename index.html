@@ -1087,13 +1087,16 @@ function EmployeeView({ me, marketId, availability, shifts, weekStart, weekDates
 
 // ─── SCAN MODAL ──────────────────────────────────────────────────────────────
 function ScanModal({ marketId, employees, onImport, onClose }) {
-  const [image, setImage] = useState(null); // { base64, mediaType, dataUrl }
+  const [image, setImage] = useState(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
   const [matchedEmpId, setMatchedEmpId] = useState("");
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem("marktplan:scanApiKey") || "");
   const fileRef = useRef(null);
   const mktEmps = employees.filter(e => e.marketId === marketId);
+
+  function saveKey(k) { setApiKey(k); try { localStorage.setItem("marktplan:scanApiKey", k); } catch {} }
 
   function handleFile(e) {
     const file = e.target.files?.[0]; if (!file) return;
@@ -1111,9 +1114,10 @@ function ScanModal({ marketId, employees, onImport, onClose }) {
     setLoading(true); setError("");
     try {
       const today = new Date();
+      if (!apiKey.trim()) throw new Error("Kein API-Key eingetragen.");
       const res = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-api-key": apiKey.trim(), "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
         body: JSON.stringify({
           model: "claude-sonnet-4-6",
           max_tokens: 1000,
@@ -1159,6 +1163,11 @@ Rules: Use current or next month for dates without a year. 24h time format. Defa
       <div className="modal" style={{ width: "min(480px, calc(100vw - 32px))", maxHeight: "88vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
         <div className="modal-t">📷 Zettel scannen</div>
         <div className="modal-s">Foto vom handgeschriebenen Verfügbarkeitszettel — KI liest die Zeiten automatisch aus.</div>
+
+        <div className="field" style={{ marginBottom: 14 }}>
+          <label>Anthropic API-Key <span style={{ fontWeight: 400, color: "#94A3B8", textTransform: "none" }}>(wird nur lokal gespeichert)</span></label>
+          <input type="password" placeholder="sk-ant-…" value={apiKey} onChange={e => saveKey(e.target.value)} style={{ fontFamily: "monospace" }} />
+        </div>
 
         <input ref={fileRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={handleFile} />
 
