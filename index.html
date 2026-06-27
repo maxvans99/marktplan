@@ -1630,8 +1630,13 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                   return true;
                 };
 
-                weekDates.forEach(d => {
+                weekDates.forEach((d, dayIdx) => {
                   const ds = fmtISO(d);
+
+                  // Ist heute ein Liefertag?
+                  const isDeliveryDay = (deliveryConfig.types ?? []).some(t => t.days.includes(dayIdx))
+                    && !(deliveryConfig.exceptions ?? []).find(e => e.date === ds);
+
                   const alreadyPlanned = new Set(
                     [...shifts, ...newShifts].filter(s => s.date === ds && mktEmpIdSet.has(s.employeeId)).map(s => s.employeeId)
                   );
@@ -1641,42 +1646,63 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                     .map(a => ({ a, emp: mktEmps.find(e => e.id === a.employeeId) }))
                     .filter(x => x.emp && target(x.emp) - (planned[x.emp.id] ?? 0) > 0);
 
-                  // Schritt 1: Marktleiter = Schließkraft — immer für die Schließung einplanen
-                  const mlAvail = dayAvail.filter(x => x.emp.isMarktleiter)
-                    .sort((x, y) => x.a.endTime.localeCompare(y.a.endTime) * -1); // längste Verfügbarkeit zuerst
-                  const mlClose = mlAvail.find(x => x.a.endTime >= mh.managerEnd);
-                  if (mlClose) {
-                    planOne(mlClose.a, mlClose.emp, null, toMin(mh.managerEnd));
-                    alreadyPlanned.add(mlClose.emp.id);
+                  const plan = (x) => { if (planOne(x.a, x.emp)) { alreadyPlanned.add(x.emp.id); return true; } return false; };
+                  const avail = () => dayAvail.filter(x => !alreadyPlanned.has(x.emp.id));
+                  const byPrio = (arr) => [...arr].sort((x, y) =>
+                    ((x.emp.isSchliessKraft ? 0 : 1) - (y.emp.isSchliessKraft ? 0 : 1)) ||
+                    priority(x.emp) - priority(y.emp) ||
+                    (target(y.emp) - (planned[y.emp.id] ?? 0)) - (target(x.emp) - (planned[x.emp.id] ?? 0))
+                  );
+
+                  // ── Schritt 1: ML = Schließkraft ──
+                  const mlClose = dayAvail.filter(x => x.emp.isMarktleiter)
+                    .sort((x, y) => y.a.endTime.localeCompare(x.a.endTime))
+                    .find(x => x.a.endTime >= mh.managerEnd);
+                  if (mlClose) { planOne(mlClose.a, mlClose.emp, null, toMin(mh.managerEnd)); alreadyPlanned.add(mlClose.emp.id); }
+
+                  // ── Schritt 2: Früh-SK + Spät-SK (Schließkraft bevorzugt) ──
+                  const fruehSK = byPrio(avail()).find(x => x.a.startTime <= mh.open);
+                  if (fruehSK) plan(fruehSK);
+                  const spaetSK = byPrio(avail()).find(x => x.a.startTime >= thr.spaet);
+                  if (spaetSK) plan(spaetSK);
+
+                  // ── Schritt 3: Kasse Früh + Spät sicherstellen ──
+                  const kasseFrueh = byPrio(avail().filter(x => (x.emp.defaultRoles ?? []).includes("Kasse") && x.a.startTime < thr.frueh)).shift();
+                  if (kasseFrueh) plan(kasseFrueh);
+                  const kasseSpaet = byPrio(avail().filter(x => (x.emp.defaultRoles ?? []).includes("Kasse") && x.a.startTime >= thr.spaet)).shift();
+                  if (kasseSpaet) plan(kasseSpaet);
+
+                  // ── Schritt 4: Liefertag → Mittelschicht bevorzugt auffüllen ──
+                  if (isDeliveryDay) {
+                    const mittelAvail = byPrio(avail().filter(x => x.a.startTime >= thr.frueh && x.a.startTime < thr.spaet));
+                    mittelAvail.slice(0, 2).forEach(x => plan(x));
                   }
 
-                  // Schritt 2: Früh-SK + Spät-SK aus echten Schließkräften (isSchliessKraft), sonst Vollzeit
-                  const skAvail = dayAvail.filter(x => !x.emp.isMarktleiter && !alreadyPlanned.has(x.emp.id))
-                    .sort((x, y) => ((x.emp.isSchliessKraft ? 0 : 1) - (y.emp.isSchliessKraft ? 0 : 1)) || priority(x.emp) - priority(y.emp));
-                  const fruehSK = skAvail.find(x => x.a.startTime <= mh.open);
-                  if (fruehSK) { planOne(fruehSK.a, fruehSK.emp); alreadyPlanned.add(fruehSK.emp.id); }
-                  const spaetSK = skAvail.find(x => !alreadyPlanned.has(x.emp.id) && x.a.startTime >= thr.spaet);
-                  if (spaetSK) { planOne(spaetSK.a, spaetSK.emp); alreadyPlanned.add(spaetSK.emp.id); }
+                  // ── Schritt 5: Gleichmäßig Früh/Spät auffüllen — immer ausgewogen ──
+                  // Zähle wie viele Früh und Spät bereits geplant sind
+                  const countFrueh = () => [...alreadyPlanned].filter(id => {
+                    const s = newShifts.find(s => s.employeeId === id && s.date === ds) ?? shifts.find(s => s.employeeId === id && s.date === ds);
+                    return s && s.startTime < thr.frueh;
+                  }).length;
+                  const countSpaet = () => [...alreadyPlanned].filter(id => {
+                    const s = newShifts.find(s => s.employeeId === id && s.date === ds) ?? shifts.find(s => s.employeeId === id && s.date === ds);
+                    return s && s.startTime >= thr.spaet;
+                  }).length;
 
-                  // Schritt 2: Kasse-Balance — Früh UND Spät abdecken
-                  const kasseAvail = dayAvail
-                    .filter(x => !alreadyPlanned.has(x.emp.id) && (x.emp.defaultRoles ?? []).includes("Kasse"))
-                    .sort((x, y) => priority(x.emp) - priority(y.emp));
-
-                  const kasseFrueh = kasseAvail.find(x => x.a.startTime < thr.frueh);
-                  const kasseSpaet = kasseAvail.find(x => x.a.startTime >= thr.spaet && x !== kasseFrueh);
-
-                  if (kasseFrueh) { planOne(kasseFrueh.a, kasseFrueh.emp); alreadyPlanned.add(kasseFrueh.emp.id); }
-                  if (kasseSpaet && !alreadyPlanned.has(kasseSpaet.emp.id)) { planOne(kasseSpaet.a, kasseSpaet.emp); alreadyPlanned.add(kasseSpaet.emp.id); }
-
-                  // Schritt 3: Alle übrigen nach Priorität + Stunden-Defizit
-                  dayAvail
-                    .filter(x => !alreadyPlanned.has(x.emp.id))
-                    .sort((x, y) => priority(x.emp) !== priority(y.emp) ? priority(x.emp) - priority(y.emp) : (target(y.emp) - (planned[y.emp.id] ?? 0)) - (target(x.emp) - (planned[x.emp.id] ?? 0)))
-                    .forEach(({ a, emp }) => {
-                      if (alreadyPlanned.has(emp.id)) return;
-                      if (planOne(a, emp)) alreadyPlanned.add(emp.id);
-                    });
+                  // Restliche verfügbare nach Priorität einplanen, dabei immer die unterbesetzte Seite bevorzugen
+                  let remaining = byPrio(avail());
+                  remaining.forEach(x => {
+                    if (alreadyPlanned.has(x.emp.id)) return;
+                    const cf = countFrueh(), cs = countSpaet();
+                    const isFrueh = x.a.startTime < thr.frueh;
+                    const isSpaet = x.a.startTime >= thr.spaet;
+                    const isMittel = !isFrueh && !isSpaet;
+                    // Mittelschicht nur an Liefertagen oder wenn Früh+Spät je ≥2 besetzt
+                    if (isMittel && !isDeliveryDay && cf < 2 && cs < 2) return;
+                    // Bevorzuge unterbesetzte Seite: wenn Spät < Früh, plane erst Spät
+                    if (isFrueh && cf > cs + 1) return;
+                    plan(x);
+                  });
                 });
 
                 if (newShifts.length === 0) {
