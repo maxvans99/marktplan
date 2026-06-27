@@ -316,7 +316,7 @@ const MARKETS = [
 const DAY_NAMES = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 
 // ponytail: Passwörter im State als Klartext — in Produktion: Hashing + Server-Sessions
-const MANAGER_CREDS = { 1: "1234", 2: "1234", 3: "1234", 4: "1234", 5: "1234" };
+const DEFAULT_MANAGER_CREDS = { 1: "1234", 2: "1234", 3: "1234", 4: "1234", 5: "1234" };
 
 function getMonday(d) {
   const date = new Date(d); const day = date.getDay() || 7;
@@ -599,6 +599,7 @@ function App() {
   const [rolesConfig, setRolesConfig] = usePersistedState("rolesConfig", () =>
     Object.fromEntries(MARKETS.map(m => [m.id, { roles: DEFAULT_ROLES.map(r => ({ ...r })), thresholds: { ...DEFAULT_THRESHOLDS } }]))
   );
+  const [managerCreds, setManagerCreds] = usePersistedState("managerCreds", () => ({ ...DEFAULT_MANAGER_CREDS }));
 
   useEffect(() => { try { localStorage.setItem(LS_PREFIX + "version", LS_VERSION); } catch {} }, []);
 
@@ -610,7 +611,7 @@ function App() {
     location.reload();
   }
 
-  if (page === "login") return <LoginScreen employees={employees} onLogin={handleLogin} />;
+  if (page === "login") return <LoginScreen employees={employees} onLogin={handleLogin} managerCreds={managerCreds} />;
 
   if (page === "setPassword") {
     const me = employees.find(e => e.id === myEmployeeId);
@@ -656,12 +657,14 @@ function App() {
       onUpdateMarketHours={mh => setRolesConfig(p => ({ ...p, [marketId]: { ...mktRolesConfig, marketHours: mh } }))}
       onBulkAddShifts={newShifts => setShifts(p => [...p, ...newShifts])}
       onResetData={resetAllData}
+      managerCreds={managerCreds}
+      onUpdateManagerCreds={creds => setManagerCreds(creds)}
     />
   );
 }
 
 // ─── LOGIN ────────────────────────────────────────────────────────────────────
-function LoginScreen({ employees, onLogin }) {
+function LoginScreen({ employees, onLogin, managerCreds }) {
   const [role, setRole] = useState(null);
   const [marketId, setMarketId] = useState("");
   const [employeeId, setEmployeeId] = useState("");
@@ -680,7 +683,7 @@ function LoginScreen({ employees, onLogin }) {
     if (role === "admin") {
       onLogin({ role: "admin" });
     } else if (role === "manager") {
-      if (MANAGER_CREDS[parseInt(marketId)] !== password) { setError("Falsches Passwort."); return; }
+      if ((managerCreds ?? DEFAULT_MANAGER_CREDS)[parseInt(marketId)] !== password) { setError("Falsches Passwort."); return; }
       onLogin({ role: "manager", marketId: parseInt(marketId) });
     } else {
       const emp = employees.find(e => e.id === parseInt(employeeId));
@@ -744,7 +747,7 @@ function LoginScreen({ employees, onLogin }) {
 
           {error && <div className="auth-error">{error}</div>}
 
-          {role === "manager" && marketId && !error && <div className="pw-hint">Demo-Passwort: <strong>{MANAGER_CREDS[parseInt(marketId)]}</strong></div>}
+          {role === "manager" && marketId && !error && <div className="pw-hint">Marktleitungs-Passwort für diesen Markt erforderlich.</div>}
           {role === "employee" && employeeId && !error && <div className="pw-hint">Demo-Passwort: <strong>1234</strong></div>}
         </>}
 
@@ -792,7 +795,7 @@ function SetPasswordView({ name, onSave }) {
 }
 
 // ─── SIDEBAR ──────────────────────────────────────────────────────────────────
-function Sidebar({ role, marketId, isAdmin, onMarketChange, onLogout, empName, onChangePw, sbOpen, onClose, onShowDelivery, onShowScan, onShowAddEmp, onShowRoles, onResetData }) {
+function Sidebar({ role, marketId, isAdmin, onMarketChange, onLogout, empName, onChangePw, sbOpen, onClose, onShowDelivery, onShowScan, onShowAddEmp, onShowRoles, onResetData, onShowManagerPw }) {
   const market = MARKETS.find(m => m.id === marketId);
   const action = (fn) => () => { fn?.(); onClose(); };
   return (
@@ -843,12 +846,19 @@ function Sidebar({ role, marketId, isAdmin, onMarketChange, onLogout, empName, o
           <div className="sb-section">Einstellungen</div>
           <div className="sb-item" onClick={onChangePw}><span className="sb-dot" />Passwort ändern</div>
         </>}
-        {isAdmin && onResetData && <>
+        {isAdmin && <>
           <div className="sb-section">System</div>
-          <div className="sb-item" style={{ color: "#F87171" }}
-            onClick={() => { if (confirm("Wirklich ALLE gespeicherten Daten löschen und auf die Demo-Daten zurücksetzen? Das kann nicht rückgängig gemacht werden.")) onResetData(); }}>
-            <span style={{ fontSize: 13 }}>🗑️</span> Daten zurücksetzen
-          </div>
+          {onShowManagerPw && (
+            <div className="sb-item" onClick={onShowManagerPw}>
+              <span style={{ fontSize: 13 }}>🔑</span> Marktleitungs-Passwörter
+            </div>
+          )}
+          {onResetData && (
+            <div className="sb-item" style={{ color: "#F87171" }}
+              onClick={() => { if (confirm("Wirklich ALLE gespeicherten Daten löschen und auf die Demo-Daten zurücksetzen? Das kann nicht rückgängig gemacht werden.")) onResetData(); }}>
+              <span style={{ fontSize: 13 }}>🗑️</span> Daten zurücksetzen
+            </div>
+          )}
         </>}
       </div>
       <div className="sb-footer">
@@ -1441,7 +1451,7 @@ function RolesModal({ roles, thresholds: initThresholds, marketHours: initMh, on
 }
 
 // ─── MARKTLEITUNG-ANSICHT ─────────────────────────────────────────────────────
-function ManagerView({ marketId, onMarketChange, isAdmin, employees, availability, shifts, weekStart, weekDates, onWeekChange, onAddShift, onDelShift, onAddEmployee, onDeleteEmployee, onUpdateEmployee, onImportAvailability, deliveryConfig, onUpdateDelivery, roles, thresholds, marketHours, onUpdateRoles, onUpdateMarketHours, onBulkAddShifts, onLogout, onResetData }) {
+function ManagerView({ marketId, onMarketChange, isAdmin, employees, availability, shifts, weekStart, weekDates, onWeekChange, onAddShift, onDelShift, onAddEmployee, onDeleteEmployee, onUpdateEmployee, onImportAvailability, deliveryConfig, onUpdateDelivery, roles, thresholds, marketHours, onUpdateRoles, onUpdateMarketHours, onBulkAddShifts, onLogout, onResetData, managerCreds, onUpdateManagerCreds }) {
   const [sbOpen, setSbOpen] = useState(false);
   const [modal, setModal] = useState(null);
   const [delEmpModal, setDelEmpModal] = useState(null);
@@ -1449,6 +1459,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
   const [showScan, setShowScan] = useState(false);
   const [showDelivery, setShowDelivery] = useState(false);
   const [showRoles, setShowRoles] = useState(false);
+  const [showManagerPw, setShowManagerPw] = useState(false);
   const [tlDay, setTlDay] = useState(() => { const d = new Date().getDay(); return d === 0 ? 6 : d - 1; });
   const [tlRole, setTlRole] = useState(null); // null = alle Abteilungen
   const [newEmpName, setNewEmpName] = useState("");
@@ -1456,7 +1467,8 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
   const [newEmpHours, setNewEmpHours] = useState("");
   const [newEmpRoles, setNewEmpRoles] = useState([]);
   const [editEmp, setEditEmp] = useState(null); // { id, name, weeklyHours, defaultRoles }
-  const [autoPlanProposal, setAutoPlanProposal] = useState([]); // vorgeschlagene Schichten (noch nicht gespeichert)
+  const [autoPlanProposal, setAutoPlanProposal] = useState([]);
+  const [editProposal, setEditProposal] = useState(null); // { shift, empName }
 
   const mktEmps = useMemo(() => employees.filter(e => e.marketId === marketId).sort((a, b) => (b.isMarktleiter ? 1 : 0) - (a.isMarktleiter ? 1 : 0)), [employees, marketId]);
   const weekStrs = useMemo(() => weekDates.map(fmtISO), [weekDates]);
@@ -1509,7 +1521,9 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
 
   function saveEditEmp() {
     if (!editEmp) return;
-    onUpdateEmployee(editEmp.id, { weeklyHours: editEmp.weeklyHours ? parseInt(editEmp.weeklyHours) : null, defaultRoles: editEmp.defaultRoles ?? [], isMarktleiter: !!editEmp.isMarktleiter, isSchliessKraft: !!editEmp.isSchliessKraft });
+    const changes = { weeklyHours: editEmp.weeklyHours ? parseInt(editEmp.weeklyHours) : null, defaultRoles: editEmp.defaultRoles ?? [], isMarktleiter: !!editEmp.isMarktleiter, isSchliessKraft: !!editEmp.isSchliessKraft };
+    if (editEmp.newPassword?.trim()) { changes.password = editEmp.newPassword.trim(); changes.mustChangePw = true; }
+    onUpdateEmployee(editEmp.id, changes);
     setEditEmp(null);
   }
 
@@ -1555,6 +1569,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
         onShowScan={() => setShowScan(true)}
         onShowAddEmp={() => setShowAddEmp(true)}
         onShowRoles={() => setShowRoles(true)}
+        onShowManagerPw={isAdmin ? () => setShowManagerPw(true) : null}
         onResetData={onResetData} />
       <div className="main">
         <div className="ph">
@@ -1612,16 +1627,17 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
 
                 const mh = marketHours ?? DEFAULT_MARKET_HOURS;
                 const target = e => (e.weeklyHours ?? 0) * 60;
-                // ML = höchste Priorität (-1), dann Vollzeit, Teilzeit, Aushilfe
                 const priority = e => e.isMarktleiter ? -1 : e.weeklyHours >= 35 ? 0 : e.weeklyHours > 10 ? 1 : 2;
                 const newShifts = [];
+                // O(1) employee lookup
+                const empById = new Map(mktEmps.map(e => [e.id, e]));
 
                 const planOne = (a, emp, overrideStart, overrideEnd) => {
-                  const remaining = target(emp) - (planned[emp.id] ?? 0);
-                  if (remaining <= 0) return false;
+                  const rem = target(emp) - (planned[emp.id] ?? 0);
+                  if (rem <= 0) return false;
                   const startStr = overrideStart ?? a.startTime;
                   let endMin = overrideEnd != null ? overrideEnd : toMin(a.endTime);
-                  if (!emp.isMarktleiter && emp.weeklyHours <= 10) endMin = Math.min(endMin, toMin(startStr) + Math.min(remaining, 300));
+                  if (!emp.isMarktleiter && emp.weeklyHours <= 10) endMin = Math.min(endMin, toMin(startStr) + Math.min(rem, 300));
                   const shiftMin = endMin - toMin(startStr);
                   if (shiftMin < 60) return false;
                   const assignedRoles = (emp.defaultRoles ?? []).length > 0 ? emp.defaultRoles : [defaultRole];
@@ -1643,7 +1659,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
 
                   const dayAvail = availability
                     .filter(a => a.date === ds && mktEmpIdSet.has(a.employeeId) && !alreadyPlanned.has(a.employeeId))
-                    .map(a => ({ a, emp: mktEmps.find(e => e.id === a.employeeId) }))
+                    .map(a => ({ a, emp: empById.get(a.employeeId) }))
                     .filter(x => x.emp && target(x.emp) - (planned[x.emp.id] ?? 0) > 0);
 
                   const plan = (x) => { if (planOne(x.a, x.emp)) { alreadyPlanned.add(x.emp.id); return true; } return false; };
@@ -1678,30 +1694,22 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                     mittelAvail.slice(0, 2).forEach(x => plan(x));
                   }
 
-                  // ── Schritt 5: Gleichmäßig Früh/Spät auffüllen — immer ausgewogen ──
-                  // Zähle wie viele Früh und Spät bereits geplant sind
-                  const countFrueh = () => [...alreadyPlanned].filter(id => {
-                    const s = newShifts.find(s => s.employeeId === id && s.date === ds) ?? shifts.find(s => s.employeeId === id && s.date === ds);
-                    return s && s.startTime < thr.frueh;
-                  }).length;
-                  const countSpaet = () => [...alreadyPlanned].filter(id => {
-                    const s = newShifts.find(s => s.employeeId === id && s.date === ds) ?? shifts.find(s => s.employeeId === id && s.date === ds);
-                    return s && s.startTime >= thr.spaet;
-                  }).length;
+                  // ── Schritt 5: Gleichmäßig Früh/Spät auffüllen — laufende Zähler statt O(n²) ──
+                  // Vorberechnung: alle bereits geplanten Schichten des Tages per Map
+                  const dayShiftMap = new Map();
+                  [...shifts, ...newShifts].filter(s => s.date === ds && mktEmpIdSet.has(s.employeeId))
+                    .forEach(s => dayShiftMap.set(s.employeeId, s));
+                  let cf = [...alreadyPlanned].filter(id => { const s = dayShiftMap.get(id); return s && s.startTime < thr.frueh; }).length;
+                  let cs = [...alreadyPlanned].filter(id => { const s = dayShiftMap.get(id); return s && s.startTime >= thr.spaet; }).length;
 
-                  // Restliche verfügbare nach Priorität einplanen, dabei immer die unterbesetzte Seite bevorzugen
-                  let remaining = byPrio(avail());
-                  remaining.forEach(x => {
+                  byPrio(avail()).forEach(x => {
                     if (alreadyPlanned.has(x.emp.id)) return;
-                    const cf = countFrueh(), cs = countSpaet();
                     const isFrueh = x.a.startTime < thr.frueh;
                     const isSpaet = x.a.startTime >= thr.spaet;
                     const isMittel = !isFrueh && !isSpaet;
-                    // Mittelschicht nur an Liefertagen oder wenn Früh+Spät je ≥2 besetzt
                     if (isMittel && !isDeliveryDay && cf < 2 && cs < 2) return;
-                    // Bevorzuge unterbesetzte Seite: wenn Spät < Früh, plane erst Spät
                     if (isFrueh && cf > cs + 1) return;
-                    plan(x);
+                    if (plan(x)) { if (isFrueh) cf++; else if (isSpaet) cs++; }
                   });
                 });
 
@@ -1817,14 +1825,14 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                       return (
                         <div
                           className={`bl ${isProposal ? "" : "sh"}`}
-                          onClick={() => isProposal ? null : openCell(emp, ds)}
+                          onClick={() => isProposal ? setEditProposal({ shift: s, empName: emp.name }) : openCell(emp, ds)}
                           style={{
-                            borderColor, background: bgColor, cursor: isProposal ? "default" : "pointer",
+                            borderColor, background: bgColor, cursor: "pointer",
                             borderStyle: isProposal ? "dashed" : "solid", opacity: isProposal ? 0.92 : 1,
                           }}
                         >
                           <span className="bl-time" style={{ color: isProposal ? "#1D4ED8" : shRoles.length > 1 ? "#1E293B" : firstRole?.color }}>
-                            {isProposal && <span style={{ fontSize: 9, marginRight: 2 }}>✨</span>}
+                            {isProposal && <span style={{ fontSize: 9, marginRight: 2 }}>✏️</span>}
                             {s.startTime}–{s.endTime}
                           </span>
                           {shRoles.length > 0
@@ -2121,6 +2129,93 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
         </div>
       )}
 
+      {/* Marktleitungs-Passwörter Modal */}
+      {showManagerPw && isAdmin && (() => {
+        const localCreds = { ...(managerCreds ?? DEFAULT_MANAGER_CREDS) };
+        return (
+          <div className="ov" onClick={() => setShowManagerPw(false)}>
+            <div className="modal" style={{ width: "min(420px, calc(100vw - 24px))", maxHeight: "90vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
+              <div className="modal-t">🔑 Marktleitungs-Passwörter</div>
+              <div className="modal-s">Passwort für den Marktleitungs-Login pro Markt (nicht der persönliche MA-Login).</div>
+              {MARKETS.map(m => (
+                <div key={m.id} className="field">
+                  <label>{m.name}</label>
+                  <input type="text" id={`mgpw-${m.id}`} defaultValue={localCreds[m.id] ?? "1234"}
+                    style={{ fontFamily: "monospace" }} />
+                </div>
+              ))}
+              <div className="macts" style={{ display: "flex", gap: 8, marginTop: 16 }}>
+                <button className="btn-cancel" style={{ flex: 1 }} onClick={() => setShowManagerPw(false)}>Abbrechen</button>
+                <button className="btn-ok" style={{ flex: 2 }} onClick={() => {
+                  const updated = {};
+                  MARKETS.forEach(m => {
+                    const val = document.getElementById(`mgpw-${m.id}`)?.value?.trim();
+                    updated[m.id] = val || localCreds[m.id];
+                  });
+                  onUpdateManagerCreds(updated);
+                  setShowManagerPw(false);
+                }}>Speichern</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Proposal bearbeiten Modal */}
+      {editProposal && (() => {
+        const s = editProposal.shift;
+        const shRoles = s.roles ?? [];
+        return (
+          <div className="ov" onClick={() => setEditProposal(null)}>
+            <div className="modal" style={{ width: "min(400px, calc(100vw - 24px))" }} onClick={e => e.stopPropagation()}>
+              <div className="modal-t">Vorschlag bearbeiten</div>
+              <div className="modal-s" style={{ fontWeight: 600 }}>{editProposal.empName} · {s.date}</div>
+              <div className="field">
+                <label>Schichtzeit</label>
+                <div className="shift-time-row" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <input type="time" defaultValue={s.startTime} id="ep-start"
+                    style={{ padding: "8px 12px", border: "1.5px solid #E2E8F0", borderRadius: 8, fontSize: 14, flex: 1, outline: "none" }} />
+                  <span style={{ color: "#94A3B8" }}>–</span>
+                  <input type="time" defaultValue={s.endTime} id="ep-end"
+                    style={{ padding: "8px 12px", border: "1.5px solid #E2E8F0", borderRadius: 8, fontSize: 14, flex: 1, outline: "none" }} />
+                </div>
+              </div>
+              <div className="field">
+                <label>Rollen</label>
+                <div className="role-chip-wrap" style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {roles.map(r => {
+                    const on = shRoles.includes(r.name);
+                    return (
+                      <button key={r.id} className="role-chip"
+                        onClick={() => setEditProposal(p => ({ ...p, shift: { ...p.shift, roles: on ? p.shift.roles.filter(x => x !== r.name) : [...p.shift.roles, r.name] } }))}
+                        style={{ padding: "4px 10px", borderRadius: 7, border: "1.5px solid", borderColor: on ? r.color : "#E2E8F0", background: on ? r.color + "22" : "#fff", color: on ? r.color : "#94A3B8", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+                        {r.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="macts" style={{ display: "flex", gap: 8, marginTop: 16 }}>
+                <button className="btn-cancel" style={{ flex: 1 }}
+                  onClick={() => { setAutoPlanProposal(p => p.filter(x => x.id !== s.id)); setEditProposal(null); }}>
+                  🗑 Entfernen
+                </button>
+                <button className="btn-ok" style={{ flex: 2 }}
+                  onClick={() => {
+                    const start = document.getElementById("ep-start").value;
+                    const end = document.getElementById("ep-end").value;
+                    if (!start || !end || start >= end) return;
+                    setAutoPlanProposal(p => p.map(x => x.id !== s.id ? x : { ...x, startTime: start, endTime: end, roles: editProposal.shift.roles }));
+                    setEditProposal(null);
+                  }}>
+                  Speichern
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Mitarbeiter anlegen Modal */}
       {showAddEmp && (
         <div className="ov" onClick={() => { setShowAddEmp(false); setNewEmpName(""); setNewEmpPw(""); }}>
@@ -2220,6 +2315,25 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                     );
                   })}
                 </div>
+              </div>
+            )}
+            {(isAdmin || !editEmp.isMarktleiter) && (
+              <div className="field" style={{ marginTop: 14, background: "#FFFBEB", border: "1.5px solid #FDE68A", borderRadius: 10, padding: "10px 12px" }}>
+                <label style={{ color: "#92400E" }}>🔑 Passwort zurücksetzen{editEmp.isMarktleiter ? " (nur Admin)" : ""}</label>
+                {editEmp.isMarktleiter && !isAdmin
+                  ? <div style={{ fontSize: 12, color: "#92400E", marginTop: 4 }}>Nur ein Admin kann das Passwort von Marktleitern zurücksetzen.</div>
+                  : <>
+                      <input type="password" placeholder="Neues Passwort eingeben"
+                        value={editEmp.newPassword ?? ""}
+                        onChange={e => setEditEmp(p => ({ ...p, newPassword: e.target.value }))}
+                        style={{ marginTop: 6 }} />
+                      {editEmp.newPassword?.trim() && (
+                        <div style={{ fontSize: 11, color: "#92400E", marginTop: 4 }}>
+                          ⚠️ Mitarbeiter wird beim nächsten Login aufgefordert, das Passwort zu ändern.
+                        </div>
+                      )}
+                    </>
+                }
               </div>
             )}
             <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid #FEE2E2" }}>
