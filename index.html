@@ -747,7 +747,7 @@ function LoginScreen({ employees, onLogin, managerCreds }) {
 
           {error && <div className="auth-error">{error}</div>}
 
-          {role === "manager" && marketId && !error && <div className="pw-hint">Marktleitungs-Passwort für diesen Markt erforderlich.</div>}
+          {role === "manager" && marketId && !error && <div className="pw-hint">Passwort: <strong>{(managerCreds ?? DEFAULT_MANAGER_CREDS)[parseInt(marketId)]}</strong></div>}
           {role === "employee" && employeeId && !error && <div className="pw-hint">Demo-Passwort: <strong>1234</strong></div>}
         </>}
 
