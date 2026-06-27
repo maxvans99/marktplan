@@ -215,10 +215,29 @@
     .sched-day { width: auto; }
 
     /* Modals */
-    .modal { width: calc(100vw - 32px); max-width: 360px; padding: 20px; }
+    .modal { width: calc(100vw - 24px); max-width: 100%; padding: 18px 16px; border-radius: 14px; }
+    .modal-t { font-size: 15px; }
+    .macts { gap: 8px; }
+    .macts button { font-size: 13px; padding: 9px; }
 
     /* Role cards */
     .role-grid { grid-template-columns: 1fr 1fr !important; }
+
+    /* Stats-Banner */
+    .stats { gap: 6px; padding-bottom: 4px; }
+    .stat { padding: 8px 8px; min-width: 70px; }
+    .stat-v { font-size: 17px; }
+
+    /* Schicht-Zeiten nebeneinander → untereinander */
+    .shift-time-row { flex-direction: column !important; gap: 8px !important; }
+    .shift-time-row input[type=time] { width: 100% !important; }
+
+    /* Tagesplan: schmalere Namensspalte */
+    .tl-name-col { width: 100px !important; font-size: 11px !important; }
+
+    /* Rollen-Chips in Modals: kleiner + wrapping */
+    .role-chip-wrap { gap: 6px !important; }
+    .role-chip { padding: 4px 8px !important; font-size: 12px !important; }
   }
 
   @media (min-width: 769px) {
@@ -1934,7 +1953,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                         return (
                           <div key={s.id} style={{ display: "flex", alignItems: "center", marginBottom: 5 }}>
                             {/* Name */}
-                            <div style={{ width: 160, flexShrink: 0, fontSize: 12, fontWeight: 600, color: "#1E293B", paddingRight: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            <div className="tl-name-col" style={{ width: 160, flexShrink: 0, fontSize: 12, fontWeight: 600, color: "#1E293B", paddingRight: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                               {emp?.name ?? "?"}
                             </div>
                             {/* Balken-Bereich */}
@@ -2050,17 +2069,17 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
               </div>
             )}
             <div style={{ marginBottom: 6, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em", color: "#475569" }}>Schichtzeit festlegen</div>
-            <div className="tr" style={{ marginBottom: 14 }}>
+            <div className="tr shift-time-row" style={{ marginBottom: 14, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
               <input type="time" value={shiftStart} onChange={e => { setShiftStart(e.target.value); setTimeErr(""); }} style={{ padding: "8px 12px", border: "1.5px solid #E2E8F0", borderRadius: 8, fontSize: 14, color: "#1E293B", width: 120, outline: "none" }} />
               <span className="tr-sep" style={{ fontSize: 16 }}>–</span>
               <input type="time" value={shiftEnd} onChange={e => { setShiftEnd(e.target.value); setTimeErr(""); }} style={{ padding: "8px 12px", border: "1.5px solid #E2E8F0", borderRadius: 8, fontSize: 14, color: "#1E293B", width: 120, outline: "none" }} />
             </div>
             <div style={{ marginBottom: 6, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em", color: "#475569" }}>Abteilung / Rolle <span style={{ fontWeight: 400, color: "#94A3B8", textTransform: "none", letterSpacing: 0 }}>(mehrere wählbar)</span></div>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
+            <div className="role-chip-wrap" style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
               {roles.map(r => {
                 const active = shiftRoles.includes(r.name);
                 return (
-                  <button key={r.id} onClick={() => toggleRole(r.name)} style={{ padding: "5px 12px", borderRadius: 7, border: "1.5px solid", borderColor: active ? r.color : "#E2E8F0", background: active ? r.color + "22" : "#fff", color: active ? r.color : "#94A3B8", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>{r.name}</button>
+                  <button key={r.id} className="role-chip" onClick={() => toggleRole(r.name)} style={{ padding: "5px 12px", borderRadius: 7, border: "1.5px solid", borderColor: active ? r.color : "#E2E8F0", background: active ? r.color + "22" : "#fff", color: active ? r.color : "#94A3B8", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>{r.name}</button>
                 );
               })}
             </div>
@@ -2097,11 +2116,11 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
             {roles.length > 0 && (
               <div className="field">
                 <label>Feste Abteilung(en)</label>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 4 }}>
+                <div className="role-chip-wrap" style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 4 }}>
                   {roles.map(r => {
                     const on = newEmpRoles.includes(r.name);
                     return (
-                      <label key={r.id} style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer", fontSize: 13,
+                      <label key={r.id} className="role-chip" style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer", fontSize: 13,
                         background: on ? r.color + "22" : "#F8FAFC", border: `1.5px solid ${on ? r.color : "#E2E8F0"}`,
                         borderRadius: 7, padding: "4px 10px", userSelect: "none" }}>
                         <input type="checkbox" checked={on} onChange={() => toggleNewEmpRole(r.name)} style={{ accentColor: r.color }} />
@@ -2160,11 +2179,11 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
             {roles.length > 0 && (
               <div className="field">
                 <label>Feste Abteilung(en)</label>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 4 }}>
+                <div className="role-chip-wrap" style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 4 }}>
                   {roles.map(r => {
                     const on = (editEmp.defaultRoles ?? []).includes(r.name);
                     return (
-                      <label key={r.id} style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer", fontSize: 13,
+                      <label key={r.id} className="role-chip" style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer", fontSize: 13,
                         background: on ? r.color + "22" : "#F8FAFC", border: `1.5px solid ${on ? r.color : "#E2E8F0"}`,
                         borderRadius: 7, padding: "4px 10px", userSelect: "none" }}>
                         <input type="checkbox" checked={on} onChange={() =>
