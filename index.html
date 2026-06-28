@@ -186,7 +186,6 @@
   .empty-state { padding: 40px; text-align: center; color: #94A3B8; font-size: 14px; }
 
   /* ── SAFE AREA (iPhone Notch / Dynamic Island) ── */
-  .mob-bar { padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
   .sidebar { padding-bottom: env(safe-area-inset-bottom); }
   .sb-footer { padding-bottom: max(12px, env(safe-area-inset-bottom)); }
 
@@ -199,7 +198,7 @@
     .mob-bar {
       display: flex; align-items: center; justify-content: space-between;
       position: fixed; top: 0; left: 0; right: 0; height: 52px;
-      background: #0F172A; padding: 0 16px; z-index: 50;
+      background: #0F172A; padding: 0 max(16px, env(safe-area-inset-right)); padding-left: max(16px, env(safe-area-inset-left)); z-index: 50;
       border-bottom: 1px solid rgba(255,255,255,.08);
     }
     .burger { background: none; border: none; color: #fff; font-size: 22px; cursor: pointer; padding: 6px; line-height: 1; }
@@ -318,14 +317,19 @@ const LS_PREFIX  = "marktplan:";
 const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
 const APP_BUILD  = "20260628-2"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
 
-// Auto-Reload + Daten-Reset: Bei neuem Build alte Daten löschen und neu laden
+function clearAllPersistedState() {
+  try {
+    Object.keys(localStorage).filter(k => k.startsWith(LS_PREFIX) && k !== LS_PREFIX + "build")
+      .forEach(k => localStorage.removeItem(k));
+  } catch {}
+}
+
+// Auto-Reload + Daten-Reset: Bei neuem Build alle Daten löschen und neu laden
 (function() {
   try {
-    const stored = localStorage.getItem("marktplan:build");
-    if (stored !== APP_BUILD) {
-      ["employees","availability","shifts","deliveryConfig","rolesConfig","managerCreds","version"]
-        .forEach(k => localStorage.removeItem("marktplan:" + k));
-      localStorage.setItem("marktplan:build", APP_BUILD);
+    if (localStorage.getItem(LS_PREFIX + "build") !== APP_BUILD) {
+      clearAllPersistedState();
+      localStorage.setItem(LS_PREFIX + "build", APP_BUILD);
       location.reload(true);
     }
   } catch {}
@@ -661,10 +665,7 @@ function App() {
   useEffect(() => { try { localStorage.setItem(LS_PREFIX + "version", LS_VERSION); } catch {} }, []);
 
   function resetAllData() {
-    try {
-      ["employees", "availability", "shifts", "deliveryConfig", "rolesConfig", "version"]
-        .forEach(k => localStorage.removeItem(LS_PREFIX + k));
-    } catch {}
+    clearAllPersistedState();
     location.reload();
   }
 
@@ -1106,11 +1107,9 @@ function ScanModal({ marketId, employees, onImport, onClose }) {
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
   const [matchedEmpId, setMatchedEmpId] = useState("");
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem("marktplan:scanApiKey") || "");
+  const [apiKey, setApiKey] = usePersistedState("scanApiKey", "");
   const fileRef = useRef(null);
   const mktEmps = employees.filter(e => e.marketId === marketId);
-
-  function saveKey(k) { setApiKey(k); try { localStorage.setItem("marktplan:scanApiKey", k); } catch {} }
 
   function handleFile(e) {
     const file = e.target.files?.[0]; if (!file) return;
@@ -1128,10 +1127,11 @@ function ScanModal({ marketId, employees, onImport, onClose }) {
     setLoading(true); setError("");
     try {
       const today = new Date();
-      if (!apiKey.trim()) throw new Error("Kein API-Key eingetragen.");
+      const trimmedKey = apiKey.trim();
+      if (!trimmedKey) throw new Error("Kein API-Key eingetragen.");
       const res = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-api-key": apiKey.trim(), "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
+        headers: { "Content-Type": "application/json", "x-api-key": trimmedKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
         body: JSON.stringify({
           model: "claude-sonnet-4-6",
           max_tokens: 1000,
@@ -1180,7 +1180,7 @@ Rules: Use current or next month for dates without a year. 24h time format. Defa
 
         <div className="field" style={{ marginBottom: 14 }}>
           <label>Anthropic API-Key <span style={{ fontWeight: 400, color: "#94A3B8", textTransform: "none" }}>(wird nur lokal gespeichert)</span></label>
-          <input type="password" placeholder="sk-ant-…" value={apiKey} onChange={e => saveKey(e.target.value)} style={{ fontFamily: "monospace" }} />
+          <input type="password" placeholder="sk-ant-…" value={apiKey} onChange={e => setApiKey(e.target.value)} style={{ fontFamily: "monospace" }} />
         </div>
 
         <input ref={fileRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={handleFile} />
