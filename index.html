@@ -316,14 +316,18 @@ const uid = () => ++_id;
 // ─── PERSISTENZ (localStorage) ───────────────────────────────────────────────
 const LS_PREFIX  = "marktplan:";
 const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
-const APP_BUILD  = "20260628-1"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
+const APP_BUILD  = "20260628-2"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
 
-// Auto-Reload: Wenn Browser eine alte Build-Version gecacht hat, sofort neu laden
+// Auto-Reload + Daten-Reset: Bei neuem Build alte Daten löschen und neu laden
 (function() {
   try {
-    const stored = sessionStorage.getItem("marktplan:build");
-    if (stored && stored !== APP_BUILD) { sessionStorage.setItem("marktplan:build", APP_BUILD); location.reload(true); return; }
-    sessionStorage.setItem("marktplan:build", APP_BUILD);
+    const stored = localStorage.getItem("marktplan:build");
+    if (stored !== APP_BUILD) {
+      ["employees","availability","shifts","deliveryConfig","rolesConfig","managerCreds","version"]
+        .forEach(k => localStorage.removeItem("marktplan:" + k));
+      localStorage.setItem("marktplan:build", APP_BUILD);
+      location.reload(true);
+    }
   } catch {}
 })();
 
