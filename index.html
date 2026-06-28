@@ -108,7 +108,7 @@
   .wn-btn:hover { border-color: #3B82F6; color: #3B82F6; }
   .wn-today { background: #EFF6FF; border-color: #BFDBFE; color: #1D4ED8; font-weight: 600; }
 
-  .grid-wrap { background: #fff; border-radius: 14px; overflow: hidden; overflow-x: auto; -webkit-overflow-scrolling: touch; box-shadow: 0 2px 16px rgba(0,0,0,.07); }
+  .grid-wrap { background: #fff; border-radius: 14px; overflow-x: auto; -webkit-overflow-scrolling: touch; box-shadow: 0 2px 16px rgba(0,0,0,.07); }
   .grid-head { display: grid; grid-template-columns: 140px repeat(7, 90px); background: #F8FAFC; border-bottom: 2px solid #E2E8F0; min-width: max-content; width: 100%; }
   .gh-name { padding: 12px 16px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #94A3B8; position: -webkit-sticky; position: sticky; left: 0; background: #F8FAFC; z-index: 2; }
   .gh-day { padding: 10px 6px; text-align: center; }
@@ -161,8 +161,8 @@
   .sched-badge { font-size: 11px; font-weight: 600; background: #DBEAFE; color: #1D4ED8; border-radius: 20px; padding: 3px 10px; }
   .empty-sched { font-size: 13px; color: #94A3B8; padding: 6px 0; }
 
-  .ov { position: fixed; inset: 0; background: rgba(15,23,42,.5); display: flex; align-items: center; justify-content: center; z-index: 200; -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); }
-  .modal { background: #fff; border-radius: 18px; padding: 26px; width: 340px; box-shadow: 0 24px 64px rgba(0,0,0,.2); }
+  .ov { position: fixed; inset: 0; background: rgba(15,23,42,.5); display: flex; align-items: center; justify-content: center; z-index: 200; -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); cursor: pointer; }
+  .modal { background: #fff; border-radius: 18px; padding: 26px; width: min(340px, calc(100vw - 32px)); max-height: 90vh; overflow-y: auto; box-shadow: 0 24px 64px rgba(0,0,0,.2); }
   .modal-t { font-size: 17px; font-weight: 700; color: #0F172A; margin-bottom: 4px; }
   .modal-s { font-size: 13px; color: #64748B; margin-bottom: 18px; }
   .minfo { background: #F8FAFC; border-radius: 10px; padding: 14px; margin-bottom: 18px; }
