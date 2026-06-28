@@ -316,6 +316,16 @@ const uid = () => ++_id;
 // ─── PERSISTENZ (localStorage) ───────────────────────────────────────────────
 const LS_PREFIX  = "marktplan:";
 const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
+const APP_BUILD  = "20260628-1"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
+
+// Auto-Reload: Wenn Browser eine alte Build-Version gecacht hat, sofort neu laden
+(function() {
+  try {
+    const stored = sessionStorage.getItem("marktplan:build");
+    if (stored && stored !== APP_BUILD) { sessionStorage.setItem("marktplan:build", APP_BUILD); location.reload(true); return; }
+    sessionStorage.setItem("marktplan:build", APP_BUILD);
+  } catch {}
+})();
 
 // Hebt den uid-Zähler über alle bereits vergebenen IDs aus geladenen Daten,
 // damit neue Einträge nach einem Reload nicht mit gespeicherten IDs kollidieren.
