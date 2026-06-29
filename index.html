@@ -191,6 +191,10 @@
 
   /* ── MOBILE TOP BAR ── */
   .mob-bar { display: none; }
+  .mob-logout { background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.2); color: #fff; border-radius: 7px; padding: 5px 10px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .mob-logout:hover { background: rgba(255,255,255,.22); }
+  .btn-logout-top { padding: 7px 14px; background: #F1F5F9; color: #475569; border: 1.5px solid #E2E8F0; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
+  .btn-logout-top:hover { background: #FEF2F2; color: #DC2626; border-color: #FECACA; }
   .sb-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 99; }
 
   @media (max-width: 768px) {
@@ -987,7 +991,7 @@ function EmployeeView({ me, marketId, availability, shifts, weekStart, weekDates
       <div className="mob-bar">
         <button className="burger" onClick={() => setSbOpen(true)}>☰</button>
         <span className="mob-logo">Markt<b>Plan</b></span>
-        <span />
+        <button className="mob-logout" onClick={onLogout}>Abmelden</button>
       </div>
       {sbOpen && <div className="sb-overlay" onClick={() => setSbOpen(false)} />}
       <Sidebar role="employee" marketId={marketId} onMarketChange={() => {}} onLogout={() => { if (saved === false) { setShowLogoutConfirm(true); setSbOpen(false); } else { onLogout(); } }}
@@ -999,6 +1003,7 @@ function EmployeeView({ me, marketId, availability, shifts, weekStart, weekDates
             <div className="ph-title">Mein Schichtplan</div>
             <div className="ph-sub">{me?.name} · {market?.name}</div>
           </div>
+          <button className="btn-logout-top" onClick={onLogout}>← Abmelden</button>
         </div>
 
         <WeekNav weekStart={weekStart} weekDates={weekDates} onChange={onWeekChange} />
@@ -1625,7 +1630,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
       <div className="mob-bar">
         <button className="burger" onClick={() => setSbOpen(true)}>☰</button>
         <span className="mob-logo">Markt<b>Plan</b></span>
-        <span />
+        <button className="mob-logout" onClick={onLogout}>Abmelden</button>
       </div>
       {sbOpen && <div className="sb-overlay" onClick={() => setSbOpen(false)} />}
       <Sidebar role={isAdmin ? "admin" : "manager"} marketId={marketId} isAdmin={isAdmin}
@@ -1643,6 +1648,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
             <div className="ph-title">{market?.name ?? "Markt wählen"}</div>
             <div className="ph-sub">Schichtplan verwalten</div>
           </div>
+          <button className="btn-logout-top" onClick={onLogout}>← Abmelden</button>
         </div>
 
         {!marketId ? (
