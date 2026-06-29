@@ -2051,16 +2051,49 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
 
                 {/* Zusammenfassung */}
                 {dayShifts.length > 0 && (
-                  <div style={{ display: "flex", gap: 16, marginBottom: 14, flexWrap: "wrap" }}>
-                    <span style={{ fontSize: 12, color: "#475569" }}>
-                      <b style={{ color: "#1E293B" }}>{dayShifts.length}</b> Mitarbeiter eingeplant
-                    </span>
-                    <span style={{ fontSize: 12, color: "#475569" }}>
-                      Erster kommt <b style={{ color: "#1E293B" }}>{dayShifts[0].startTime}</b>
-                    </span>
-                    <span style={{ fontSize: 12, color: "#475569" }}>
-                      Letzter geht <b style={{ color: "#1E293B" }}>{[...dayShifts].sort((a,b) => b.endTime.localeCompare(a.endTime))[0].endTime}</b>
-                    </span>
+                  <div style={{ marginBottom: 14 }}>
+                    <div style={{ display: "flex", gap: 16, marginBottom: 10, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 12, color: "#475569" }}>
+                        <b style={{ color: "#1E293B" }}>{dayShifts.length}</b> Mitarbeiter eingeplant
+                      </span>
+                      <span style={{ fontSize: 12, color: "#475569" }}>
+                        Erster kommt <b style={{ color: "#1E293B" }}>{dayShifts[0].startTime}</b>
+                      </span>
+                      <span style={{ fontSize: 12, color: "#475569" }}>
+                        Letzter geht <b style={{ color: "#1E293B" }}>{[...dayShifts].sort((a,b) => b.endTime.localeCompare(a.endTime))[0].endTime}</b>
+                      </span>
+                    </div>
+                    {roles.length > 0 && (() => {
+                      const dayOfWeek = weekDates[tlDay].getDay(); // 0=So,1=Mo,...
+                      const rows = roles.map(r => {
+                        const rShifts = dayShifts.filter(s => (s.roles ?? (s.role ? [s.role] : [])).includes(r.name));
+                        const istMin = rShifts.reduce((sum, s) => sum + toMin(s.endTime) - toMin(s.startTime), 0);
+                        const istH = Math.round(istMin / 60 * 10) / 10;
+                        // Tages-Soll = Wochen-Soll pro Schichttyp / Arbeitstage (5)
+                        const sollH = TYPES.reduce((sum, typ) => sum + (r.targetHours?.[typ] ?? 0), 0) / 5;
+                        const sollHR = Math.round(sollH * 10) / 10;
+                        return { r, istH, sollHR, count: rShifts.length };
+                      }).filter(x => x.count > 0 || x.sollHR > 0);
+                      if (!rows.length) return null;
+                      return (
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          {rows.map(({ r, istH, sollHR, count }) => {
+                            const hasSoll = sollHR > 0;
+                            const ok = !hasSoll || istH >= sollHR;
+                            return (
+                              <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 5, background: hasSoll ? (ok ? "#DCFCE7" : "#FEF2F2") : "#F8FAFC", borderRadius: 8, padding: "4px 10px", border: "1px solid " + (hasSoll ? (ok ? "#BBF7D0" : "#FECACA") : "#F1F5F9") }}>
+                                <div style={{ width: 8, height: 8, borderRadius: "50%", background: r.color, flexShrink: 0 }} />
+                                <span style={{ fontSize: 12, fontWeight: 700, color: r.color }}>{r.name}</span>
+                                <span style={{ fontSize: 12, fontWeight: 700, color: hasSoll ? (ok ? "#15803D" : "#DC2626") : "#475569" }}>
+                                  {istH}h{hasSoll ? `/${sollHR}h` : ""}
+                                </span>
+                                {hasSoll && <span style={{ fontSize: 11 }}>{ok ? "✓" : "⚠"}</span>}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
 
