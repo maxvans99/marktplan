@@ -1471,8 +1471,9 @@ function RolesModal({ roles, thresholds: initThresholds, marketHours: initMh, on
 
         {/* Tabellen-Header */}
         {list.length > 0 && (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 44px 44px 44px 28px", gap: 6, padding: "4px 0 6px", borderBottom: "2px solid #E2E8F0", marginBottom: 4 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 54px 44px 44px 44px 28px", gap: 6, padding: "4px 0 6px", borderBottom: "2px solid #E2E8F0", marginBottom: 4 }}>
             <span style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase" }}>Rolle</span>
+            <span style={{ fontSize: 11, fontWeight: 700, color: "#3B82F6", textTransform: "uppercase", textAlign: "center" }}>Soll-h</span>
             {["Früh", "Mittel", "Spät"].map(t => (
               <span key={t} style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase", textAlign: "center" }}>{t}</span>
             ))}
@@ -1483,7 +1484,7 @@ function RolesModal({ roles, thresholds: initThresholds, marketHours: initMh, on
         {list.length === 0 && <div style={{ fontSize: 13, color: "#94A3B8", padding: "8px 0 14px" }}>Noch keine Rollen angelegt.</div>}
 
         {list.map(r => (
-          <div key={r.id} style={{ display: "grid", gridTemplateColumns: "1fr 44px 44px 44px 28px", gap: 6, alignItems: "center", padding: "7px 0", borderBottom: "1px solid #F1F5F9" }}>
+          <div key={r.id} style={{ display: "grid", gridTemplateColumns: "1fr 54px 44px 44px 44px 28px", gap: 6, alignItems: "center", padding: "7px 0", borderBottom: "1px solid #F1F5F9" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
               <label title="Farbe wählen" style={{ position: "relative", width: 22, height: 22, flexShrink: 0, cursor: "pointer" }}>
                 <input type="color" value={r.color} onChange={e => setList(l => l.map(x => x.id === r.id ? { ...x, color: e.target.value } : x))}
@@ -1493,6 +1494,10 @@ function RolesModal({ roles, thresholds: initThresholds, marketHours: initMh, on
               <input value={r.name} onChange={e => setList(l => l.map(x => x.id === r.id ? { ...x, name: e.target.value } : x))}
                 style={{ flex: 1, border: "1.5px solid #E2E8F0", borderRadius: 7, padding: "5px 8px", fontSize: 13, fontWeight: 600, color: "#1E293B", outline: "none", background: "white", minWidth: 0 }} />
             </div>
+            <input type="number" min="0" max="999" placeholder="–"
+              value={r.targetHours || ""}
+              onChange={e => { const n = parseInt(e.target.value); setList(l => l.map(x => x.id === r.id ? { ...x, targetHours: isNaN(n) || n < 0 ? 0 : n } : x)); }}
+              style={{ ...inputStyle, width: 54, borderColor: "#BFDBFE", background: "#EFF6FF", color: "#1D4ED8" }} />
             {["Früh", "Mittel", "Spät"].map(typ => (
               <input key={typ} type="number" min="0" max="99" placeholder="–"
                 value={(r.minStaff?.[typ] ?? "") === 0 ? "" : (r.minStaff?.[typ] ?? "")}
@@ -1691,17 +1696,33 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                 const weekStrsLocal = weekDates.map(fmtISO);
                 const weekSet = new Set(weekStrsLocal);
 
-                // Stunden-Tracking
+                // Stunden-Tracking (Mitarbeiter)
                 const planned = {};
                 mktEmps.forEach(e => { planned[e.id] = 0; });
                 shifts.filter(s => weekSet.has(s.date) && mktEmpIdSet.has(s.employeeId))
                   .forEach(s => { planned[s.employeeId] = (planned[s.employeeId] ?? 0) + (toMin(s.endTime) - toMin(s.startTime)); });
 
+                // Abteilungs-Soll-Stunden-Tracking
+                const roleTargetMin = {};   // roleName → Ziel in Minuten
+                const rolePlannedMin = {};  // roleName → bereits geplante Minuten
+                roles.forEach(r => {
+                  if (r.targetHours > 0) roleTargetMin[r.name] = r.targetHours * 60;
+                  rolePlannedMin[r.name] = 0;
+                });
+                shifts.filter(s => weekSet.has(s.date) && mktEmpIdSet.has(s.employeeId)).forEach(s => {
+                  const dur = toMin(s.endTime) - toMin(s.startTime);
+                  (s.roles ?? []).forEach(rn => { if (rolePlannedMin[rn] != null) rolePlannedMin[rn] += dur; });
+                });
+
+                // Wie weit ist eine Abteilung noch vom Soll entfernt? (>0 = Bedarf offen)
+                const roleDeficit = rn => (roleTargetMin[rn] ?? 0) - (rolePlannedMin[rn] ?? 0);
+                // Größter offener Bedarf aller defaultRoles eines Mitarbeiters
+                const empRoleDeficit = emp => Math.max(0, ...(emp.defaultRoles ?? []).map(rn => roleDeficit(rn)));
+
                 const mh = marketHours ?? DEFAULT_MARKET_HOURS;
                 const target = e => (e.weeklyHours ?? 0) * 60;
                 const priority = e => e.isMarktleiter ? -1 : e.weeklyHours >= 35 ? 0 : e.weeklyHours > 10 ? 1 : 2;
                 const newShifts = [];
-                // O(1) employee lookup
                 const empById = new Map(mktEmps.map(e => [e.id, e]));
 
                 const planOne = (a, emp, overrideStart, overrideEnd) => {
@@ -1715,6 +1736,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                   const assignedRoles = (emp.defaultRoles ?? []).length > 0 ? emp.defaultRoles : [defaultRole];
                   newShifts.push({ id: uid(), employeeId: emp.id, date: a.date, startTime: startStr, endTime: fmtT(endMin), roles: assignedRoles });
                   planned[emp.id] = (planned[emp.id] ?? 0) + shiftMin;
+                  assignedRoles.forEach(rn => { if (rolePlannedMin[rn] != null) rolePlannedMin[rn] += shiftMin; });
                   return true;
                 };
 
@@ -1739,6 +1761,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                   const byPrio = (arr) => [...arr].sort((x, y) =>
                     ((x.emp.isSchliessKraft ? 0 : 1) - (y.emp.isSchliessKraft ? 0 : 1)) ||
                     priority(x.emp) - priority(y.emp) ||
+                    empRoleDeficit(y.emp) - empRoleDeficit(x.emp) ||   // Abteilung mit mehr offenem Soll zuerst
                     (target(y.emp) - (planned[y.emp.id] ?? 0)) - (target(x.emp) - (planned[x.emp.id] ?? 0))
                   );
 
