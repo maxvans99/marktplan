@@ -319,7 +319,7 @@ const uid = () => ++_id;
 // ─── PERSISTENZ (localStorage) ───────────────────────────────────────────────
 const LS_PREFIX  = "marktplan:";
 const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
-const APP_BUILD  = "20260628-2"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
+const APP_BUILD  = "20260629-1"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
 
 function clearAllPersistedState() {
   try {
@@ -429,13 +429,13 @@ const TYPE_COLORS = ["#3B82F6","#10B981","#F59E0B","#EF4444","#8B5CF6","#EC4899"
 
 const ROLE_COLORS = ["#6366F1","#0EA5E9","#10B981","#F59E0B","#EF4444","#8B5CF6","#EC4899","#14B8A6"];
 const DEFAULT_ROLES = [
-  { id: 1, name: "Kasse",        color: "#6366F1", minStaff: {} },
-  { id: 2, name: "TS",           color: "#0EA5E9", minStaff: {} },
-  { id: 3, name: "GT",           color: "#8B5CF6", minStaff: {} },
-  { id: 4, name: "Frische",      color: "#10B981", minStaff: {} },
-  { id: 5, name: "Metzgerei",    color: "#EF4444", minStaff: {} },
-  { id: 6, name: "Bäckerei",     color: "#F59E0B", minStaff: {} },
-  { id: 7, name: "Marktleiter",  color: "#1E293B", minStaff: {} },
+  { id: 1, name: "Kasse",        color: "#6366F1", targetHours: {} },
+  { id: 2, name: "TS",           color: "#0EA5E9", targetHours: {} },
+  { id: 3, name: "GT",           color: "#8B5CF6", targetHours: {} },
+  { id: 4, name: "Frische",      color: "#10B981", targetHours: {} },
+  { id: 5, name: "Metzgerei",    color: "#EF4444", targetHours: {} },
+  { id: 6, name: "Bäckerei",     color: "#F59E0B", targetHours: {} },
+  { id: 7, name: "Marktleiter",  color: "#1E293B", targetHours: {} },
 ];
 const DEFAULT_THRESHOLDS = { frueh: "11:00", spaet: "14:00" };
 const DEFAULT_MARKET_HOURS = { open: "07:00", close: "20:00", managerStart: "06:30", managerEnd: "20:30" };
@@ -715,8 +715,7 @@ function App() {
       roles={mktRolesConfig.roles}
       thresholds={mktRolesConfig.thresholds}
       marketHours={mktRolesConfig.marketHours}
-      onUpdateRoles={(roles, thresholds) => setRolesConfig(p => ({ ...p, [marketId]: { ...mktRolesConfig, roles, thresholds } }))}
-      onUpdateMarketHours={mh => setRolesConfig(p => ({ ...p, [marketId]: { ...mktRolesConfig, marketHours: mh } }))}
+      onUpdateRoles={(roles, thresholds, marketHours) => setRolesConfig(p => ({ ...p, [marketId]: { ...p[marketId] ?? {}, roles, thresholds, marketHours } }))}
       onBulkAddShifts={newShifts => setShifts(p => [...p, ...newShifts])}
       onResetData={resetAllData}
       managerCreds={managerCreds}
@@ -1400,8 +1399,8 @@ function DeliveryModal({ config, onSave, onClose }) {
 }
 
 // ─── ROLLEN MODAL ────────────────────────────────────────────────────────────
-function RolesModal({ roles, thresholds: initThresholds, marketHours: initMh, onSave, onUpdateMarketHours, onClose }) {
-  const [list, setList] = useState(roles.map(r => ({ minStaff: {}, ...r })));
+function RolesModal({ roles, thresholds: initThresholds, marketHours: initMh, onSave, onClose }) {
+  const [list, setList] = useState(roles.map(r => ({ targetHours: {}, ...r, minStaff: undefined })));
   const [newName, setNewName] = useState("");
   const [thr, setThr] = useState(initThresholds ?? { ...DEFAULT_THRESHOLDS });
   const [mh, setMh] = useState(initMh ?? { ...DEFAULT_MARKET_HOURS });
@@ -1409,22 +1408,22 @@ function RolesModal({ roles, thresholds: initThresholds, marketHours: initMh, on
   function addRole() {
     if (!newName.trim()) return;
     const color = ROLE_COLORS[list.length % ROLE_COLORS.length];
-    setList(l => [...l, { id: uid(), name: newName.trim(), color, minStaff: {} }]);
+    setList(l => [...l, { id: uid(), name: newName.trim(), color, targetHours: {} }]);
     setNewName("");
   }
 
-  function setMin(id, typ, val) {
+  function setHours(id, typ, val) {
     const n = parseInt(val);
-    setList(l => l.map(x => x.id === id ? { ...x, minStaff: { ...x.minStaff, [typ]: isNaN(n) || n < 0 ? 0 : n } } : x));
+    setList(l => l.map(x => x.id === id ? { ...x, targetHours: { ...x.targetHours, [typ]: isNaN(n) || n < 0 ? 0 : n } } : x));
   }
 
-  const inputStyle = { width: 44, padding: "4px 6px", border: "1.5px solid #E2E8F0", borderRadius: 6, fontSize: 12, fontWeight: 700, textAlign: "center", outline: "none" };
+  const inputStyle = { width: 54, padding: "4px 6px", border: "1.5px solid #BFDBFE", borderRadius: 6, fontSize: 12, fontWeight: 700, textAlign: "center", outline: "none", background: "#EFF6FF", color: "#1D4ED8" };
 
   return (
     <div className="ov" onClick={onClose}>
       <div className="modal" style={{ width: "min(520px, calc(100vw - 24px))", maxHeight: "90vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
         <div className="modal-t">👷 Abteilungen / Rollen</div>
-        <div className="modal-s">Lege Rollen und die Mindestbesetzung pro Schichttyp fest.</div>
+        <div className="modal-s">Lege Abteilungen und die Soll-Stunden pro Schichttyp (Früh/Mittel/Spät) pro Woche fest.</div>
 
         {/* Marktzeiten */}
         <div style={{ background: "#F0F9FF", borderRadius: 10, padding: "10px 14px", marginBottom: 10, border: "1px solid #BAE6FD" }}>
@@ -1479,20 +1478,19 @@ function RolesModal({ roles, thresholds: initThresholds, marketHours: initMh, on
 
         {/* Tabellen-Header */}
         {list.length > 0 && (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 54px 44px 44px 44px 28px", gap: 6, padding: "4px 0 6px", borderBottom: "2px solid #E2E8F0", marginBottom: 4 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase" }}>Rolle</span>
-            <span style={{ fontSize: 11, fontWeight: 700, color: "#3B82F6", textTransform: "uppercase", textAlign: "center" }}>Soll-h</span>
-            {["Früh", "Mittel", "Spät"].map(t => (
-              <span key={t} style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase", textAlign: "center" }}>{t}</span>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px 60px 28px", gap: 6, padding: "4px 0 6px", borderBottom: "2px solid #E2E8F0", marginBottom: 4 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase" }}>Abteilung</span>
+            {["Früh h", "Mittel h", "Spät h"].map(t => (
+              <span key={t} style={{ fontSize: 11, fontWeight: 700, color: "#1D4ED8", textTransform: "uppercase", textAlign: "center" }}>{t}</span>
             ))}
             <span />
           </div>
         )}
 
-        {list.length === 0 && <div style={{ fontSize: 13, color: "#94A3B8", padding: "8px 0 14px" }}>Noch keine Rollen angelegt.</div>}
+        {list.length === 0 && <div style={{ fontSize: 13, color: "#94A3B8", padding: "8px 0 14px" }}>Noch keine Abteilungen angelegt.</div>}
 
         {list.map(r => (
-          <div key={r.id} style={{ display: "grid", gridTemplateColumns: "1fr 54px 44px 44px 44px 28px", gap: 6, alignItems: "center", padding: "7px 0", borderBottom: "1px solid #F1F5F9" }}>
+          <div key={r.id} style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px 60px 28px", gap: 6, alignItems: "center", padding: "7px 0", borderBottom: "1px solid #F1F5F9" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
               <label title="Farbe wählen" style={{ position: "relative", width: 22, height: 22, flexShrink: 0, cursor: "pointer" }}>
                 <input type="color" value={r.color} onChange={e => setList(l => l.map(x => x.id === r.id ? { ...x, color: e.target.value } : x))}
@@ -1502,14 +1500,10 @@ function RolesModal({ roles, thresholds: initThresholds, marketHours: initMh, on
               <input value={r.name} onChange={e => setList(l => l.map(x => x.id === r.id ? { ...x, name: e.target.value } : x))}
                 style={{ flex: 1, border: "1.5px solid #E2E8F0", borderRadius: 7, padding: "5px 8px", fontSize: 13, fontWeight: 600, color: "#1E293B", outline: "none", background: "white", minWidth: 0 }} />
             </div>
-            <input type="number" min="0" max="999" placeholder="–"
-              value={r.targetHours || ""}
-              onChange={e => { const n = parseInt(e.target.value); setList(l => l.map(x => x.id === r.id ? { ...x, targetHours: isNaN(n) || n < 0 ? 0 : n } : x)); }}
-              style={{ ...inputStyle, width: 54, borderColor: "#BFDBFE", background: "#EFF6FF", color: "#1D4ED8" }} />
             {["Früh", "Mittel", "Spät"].map(typ => (
-              <input key={typ} type="number" min="0" max="99" placeholder="–"
-                value={(r.minStaff?.[typ] ?? "") === 0 ? "" : (r.minStaff?.[typ] ?? "")}
-                onChange={e => setMin(r.id, typ, e.target.value)}
+              <input key={typ} type="number" min="0" max="999" placeholder="–"
+                value={(r.targetHours?.[typ] ?? "") === 0 ? "" : (r.targetHours?.[typ] ?? "")}
+                onChange={e => setHours(r.id, typ, e.target.value)}
                 style={inputStyle} />
             ))}
             <button onClick={() => setList(l => l.filter(x => x.id !== r.id))}
@@ -1527,7 +1521,7 @@ function RolesModal({ roles, thresholds: initThresholds, marketHours: initMh, on
 
         <div className="macts" style={{ marginTop: 18 }}>
           <button className="btn-cancel" onClick={onClose}>Abbrechen</button>
-          <button className="btn-ok" onClick={() => { onSave(list, thr); if (onUpdateMarketHours) onUpdateMarketHours(mh); onClose(); }}>Speichern</button>
+          <button className="btn-ok" onClick={() => { onSave(list, thr, mh); onClose(); }}>Speichern</button>
         </div>
       </div>
     </div>
@@ -1710,21 +1704,30 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                 shifts.filter(s => weekSet.has(s.date) && mktEmpIdSet.has(s.employeeId))
                   .forEach(s => { planned[s.employeeId] = (planned[s.employeeId] ?? 0) + (toMin(s.endTime) - toMin(s.startTime)); });
 
-                // Abteilungs-Soll-Stunden-Tracking
-                const roleTargetMin = {};   // roleName → Ziel in Minuten
-                const rolePlannedMin = {};  // roleName → bereits geplante Minuten
+                // Abteilungs-Soll-Stunden-Tracking pro Schichttyp (Früh/Mittel/Spät)
+                // roleTargetMin[roleName][typ] = Soll-Minuten, rolePlannedMin[roleName][typ] = Ist-Minuten
+                const roleTargetMin = {};
+                const rolePlannedMin = {};
                 roles.forEach(r => {
-                  if (r.targetHours > 0) roleTargetMin[r.name] = r.targetHours * 60;
-                  rolePlannedMin[r.name] = 0;
+                  roleTargetMin[r.name] = {};
+                  rolePlannedMin[r.name] = {};
+                  TYPES.forEach(typ => {
+                    const h = r.targetHours?.[typ] ?? 0;
+                    if (h > 0) roleTargetMin[r.name][typ] = h * 60;
+                    rolePlannedMin[r.name][typ] = 0;
+                  });
                 });
                 shifts.filter(s => weekSet.has(s.date) && mktEmpIdSet.has(s.employeeId)).forEach(s => {
                   const dur = toMin(s.endTime) - toMin(s.startTime);
-                  (s.roles ?? []).forEach(rn => { if (rolePlannedMin[rn] != null) rolePlannedMin[rn] += dur; });
+                  const typ = classifyShift(s.startTime, thr);
+                  (s.roles ?? []).forEach(rn => { if (rolePlannedMin[rn]) rolePlannedMin[rn][typ] = (rolePlannedMin[rn][typ] ?? 0) + dur; });
                 });
 
-                // Wie weit ist eine Abteilung noch vom Soll entfernt? (>0 = Bedarf offen)
-                const roleDeficit = rn => (roleTargetMin[rn] ?? 0) - (rolePlannedMin[rn] ?? 0);
-                // Größter offener Bedarf aller defaultRoles eines Mitarbeiters
+                // Offener Bedarf einer Abteilung in einem Schichttyp (>0 = noch nicht erfüllt)
+                const roleTypDeficit = (rn, typ) => (roleTargetMin[rn]?.[typ] ?? 0) - (rolePlannedMin[rn]?.[typ] ?? 0);
+                // Gesamtdefizit einer Abteilung über alle Schichttypen
+                const roleDeficit = rn => TYPES.reduce((s, typ) => s + Math.max(0, roleTypDeficit(rn, typ)), 0);
+                // Größter offener Bedarf aller Abteilungen eines Mitarbeiters
                 const empRoleDeficit = emp => Math.max(0, ...(emp.defaultRoles ?? []).map(rn => roleDeficit(rn)));
 
                 const mh = marketHours ?? DEFAULT_MARKET_HOURS;
@@ -1744,7 +1747,8 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                   const assignedRoles = (emp.defaultRoles ?? []).length > 0 ? emp.defaultRoles : [defaultRole];
                   newShifts.push({ id: uid(), employeeId: emp.id, date: a.date, startTime: startStr, endTime: fmtT(endMin), roles: assignedRoles });
                   planned[emp.id] = (planned[emp.id] ?? 0) + shiftMin;
-                  assignedRoles.forEach(rn => { if (rolePlannedMin[rn] != null) rolePlannedMin[rn] += shiftMin; });
+                  const shiftTyp = classifyShift(startStr, thr);
+                  assignedRoles.forEach(rn => { if (rolePlannedMin[rn]) rolePlannedMin[rn][shiftTyp] = (rolePlannedMin[rn][shiftTyp] ?? 0) + shiftMin; });
                   return true;
                 };
 
@@ -1979,7 +1983,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                 (!tlRole || (s.roles ?? (s.role ? [s.role] : [])).includes(tlRole)))
               .sort((a,b) => a.startTime.localeCompare(b.startTime));
             const weekShifts = shifts.filter(s => mktEmpIdSet.has(s.employeeId) && weekStrs.includes(s.date));
-            const hasSoll = roles.length > 0 && roles.some(r => r.minStaff && Object.keys(r.minStaff).length > 0);
+            const hasSoll = roles.length > 0 && roles.some(r => r.targetHours && Object.values(r.targetHours).some(v => v > 0));
 
             // Timeline Berechnung
             const allMins = dayShifts.flatMap(s => [toMin(s.startTime), toMin(s.endTime)]);
@@ -2155,11 +2159,14 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                         <tbody>
                           {roles.map(r => {
                             const cells = TYPES.map(typ => {
-                              const ist = weekShifts.filter(s => classifyShift(s.startTime, thr) === typ && (s.roles ? s.roles.includes(r.name) : s.role === r.name)).length;
-                              const soll = r.minStaff?.[typ];
-                              const hasSollTyp = soll != null && soll > 0;
-                              const ok = !hasSollTyp || ist >= soll;
-                              return { ist, soll, hasSollTyp, ok };
+                              const istMin = weekShifts
+                                .filter(s => classifyShift(s.startTime, thr) === typ && (s.roles ? s.roles.includes(r.name) : s.role === r.name))
+                                .reduce((sum, s) => sum + toMin(s.endTime) - toMin(s.startTime), 0);
+                              const istH = Math.round(istMin / 60 * 10) / 10;
+                              const sollH = r.targetHours?.[typ] ?? 0;
+                              const hasSoll = sollH > 0;
+                              const ok = !hasSoll || istH >= sollH;
+                              return { istH, sollH, hasSoll, ok };
                             });
                             return (
                               <tr key={r.id} style={{ borderTop: "1px solid #F1F5F9" }}>
@@ -2171,8 +2178,8 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                                 </td>
                                 {cells.map((c, i) => (
                                   <td key={i} style={{ textAlign: "center", padding: "5px 6px" }}>
-                                    <div style={{ display: "inline-flex", alignItems: "center", gap: 2, background: c.hasSollTyp ? (c.ok ? "#DCFCE7" : "#FEF2F2") : "#F8FAFC", borderRadius: 6, padding: "3px 8px", fontSize: 12, fontWeight: 700, color: c.hasSollTyp ? (c.ok ? "#15803D" : "#DC2626") : "#94A3B8", minWidth: 36, justifyContent: "center" }}>
-                                      {c.ist}{c.hasSollTyp && <span style={{ fontWeight: 400, fontSize: 10, opacity: .8 }}>/{c.soll}</span>}{c.hasSollTyp && (c.ok ? "✓" : "⚠")}
+                                    <div style={{ display: "inline-flex", alignItems: "center", gap: 2, background: c.hasSoll ? (c.ok ? "#DCFCE7" : "#FEF2F2") : "#F8FAFC", borderRadius: 6, padding: "3px 8px", fontSize: 12, fontWeight: 700, color: c.hasSoll ? (c.ok ? "#15803D" : "#DC2626") : "#94A3B8", minWidth: 40, justifyContent: "center" }}>
+                                      {c.istH}h{c.hasSoll && <span style={{ fontWeight: 400, fontSize: 10, opacity: .8 }}>/{c.sollH}h</span>}{c.hasSoll && (c.ok ? "✓" : "⚠")}
                                     </div>
                                   </td>
                                 ))}
@@ -2182,7 +2189,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                         </tbody>
                       </table>
                     </div>
-                    {!hasSoll && <div style={{ fontSize: 11, color: "#CBD5E1", marginTop: 8 }}>Tipp: In „👷 Rollen verwalten" Mindestbesetzung pro Schichttyp eintragen.</div>}
+                    {!hasSoll && <div style={{ fontSize: 11, color: "#CBD5E1", marginTop: 8 }}>Tipp: In „👷 Abteilungen / Rollen" die Soll-Stunden pro Schichttyp eintragen.</div>}
                   </div>
                 )}
               </div>
@@ -2466,7 +2473,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
       )}
 
       {showRoles && (
-        <RolesModal roles={roles} thresholds={thresholds} marketHours={marketHours} onSave={onUpdateRoles} onUpdateMarketHours={onUpdateMarketHours} onClose={() => setShowRoles(false)} />
+        <RolesModal roles={roles} thresholds={thresholds} marketHours={marketHours} onSave={onUpdateRoles} onClose={() => setShowRoles(false)} />
       )}
 
       {delEmpModal && (
