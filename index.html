@@ -1400,15 +1400,16 @@ function DeliveryModal({ config, onSave, onClose }) {
 
 // ─── ROLLEN MODAL ────────────────────────────────────────────────────────────
 function RolesModal({ roles, thresholds: initThresholds, marketHours: initMh, onSave, onClose }) {
-  const [list, setList] = useState(roles.map(r => ({ targetHours: {}, ...r, minStaff: undefined })));
+  const [list, setList] = useState(roles.map(r => ({ targetHours: {}, dayOverrides: {}, ...r, minStaff: undefined })));
   const [newName, setNewName] = useState("");
   const [thr, setThr] = useState(initThresholds ?? { ...DEFAULT_THRESHOLDS });
   const [mh, setMh] = useState(initMh ?? { ...DEFAULT_MARKET_HOURS });
+  const [expandedRole, setExpandedRole] = useState(null);
 
   function addRole() {
     if (!newName.trim()) return;
     const color = ROLE_COLORS[list.length % ROLE_COLORS.length];
-    setList(l => [...l, { id: uid(), name: newName.trim(), color, targetHours: {} }]);
+    setList(l => [...l, { id: uid(), name: newName.trim(), color, targetHours: {}, dayOverrides: {} }]);
     setNewName("");
   }
 
@@ -1416,6 +1417,19 @@ function RolesModal({ roles, thresholds: initThresholds, marketHours: initMh, on
     const n = parseInt(val);
     setList(l => l.map(x => x.id === id ? { ...x, targetHours: { ...x.targetHours, [typ]: isNaN(n) || n < 0 ? 0 : n } } : x));
   }
+
+  function setDayOverride(id, dow, field, val) {
+    const n = parseInt(val);
+    setList(l => l.map(x => {
+      if (x.id !== id) return x;
+      const prev = x.dayOverrides?.[dow] ?? {};
+      const updated = { ...prev, [field]: isNaN(n) || n < 0 ? 0 : n };
+      return { ...x, dayOverrides: { ...x.dayOverrides, [dow]: updated } };
+    }));
+  }
+
+  const DAY_LABELS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa"];
+  const DAY_NUMS   = [1, 2, 3, 4, 5, 6];
 
   const inputStyle = { width: 54, padding: "4px 6px", border: "1.5px solid #BFDBFE", borderRadius: 6, fontSize: 12, fontWeight: 700, textAlign: "center", outline: "none", background: "#EFF6FF", color: "#1D4ED8" };
 
@@ -1478,43 +1492,89 @@ function RolesModal({ roles, thresholds: initThresholds, marketHours: initMh, on
 
         {/* Tabellen-Header */}
         {list.length > 0 && (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px 60px 60px 28px", gap: 6, padding: "4px 0 6px", borderBottom: "2px solid #E2E8F0", marginBottom: 4 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px 60px 60px 36px 28px", gap: 6, padding: "4px 0 6px", borderBottom: "2px solid #E2E8F0", marginBottom: 4 }}>
             <span style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase" }}>Abteilung</span>
-            {["Früh h", "Mittel h", "Spät h"].map(t => (
-              <span key={t} style={{ fontSize: 11, fontWeight: 700, color: "#1D4ED8", textTransform: "uppercase", textAlign: "center" }}>{t}</span>
+            {["Früh", "Mittel", "Spät"].map(t => (
+              <span key={t} style={{ fontSize: 11, fontWeight: 700, color: "#1D4ED8", textTransform: "uppercase", textAlign: "center" }}>{t}<br/><span style={{ fontWeight: 400, textTransform: "none" }}>h/Tag</span></span>
             ))}
-            <span style={{ fontSize: 11, fontWeight: 700, color: "#059669", textTransform: "uppercase", textAlign: "center" }}>Tag h</span>
+            <span style={{ fontSize: 11, fontWeight: 700, color: "#059669", textTransform: "uppercase", textAlign: "center" }}>Ges.<br/><span style={{ fontWeight: 400, textTransform: "none" }}>h/Tag</span></span>
+            <span style={{ fontSize: 11, color: "#94A3B8", textAlign: "center" }}>↕</span>
             <span />
           </div>
         )}
 
         {list.length === 0 && <div style={{ fontSize: 13, color: "#94A3B8", padding: "8px 0 14px" }}>Noch keine Abteilungen angelegt.</div>}
 
-        {list.map(r => (
-          <div key={r.id} style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px 60px 60px 28px", gap: 6, alignItems: "center", padding: "7px 0", borderBottom: "1px solid #F1F5F9" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-              <label title="Farbe wählen" style={{ position: "relative", width: 22, height: 22, flexShrink: 0, cursor: "pointer" }}>
-                <input type="color" value={r.color} onChange={e => setList(l => l.map(x => x.id === r.id ? { ...x, color: e.target.value } : x))}
-                  style={{ position: "absolute", opacity: 0, width: "100%", height: "100%", cursor: "pointer" }} />
-                <div style={{ width: 22, height: 22, borderRadius: "50%", background: r.color, border: "2px solid white", boxShadow: "0 0 0 1.5px " + r.color }} />
-              </label>
-              <input value={r.name} onChange={e => setList(l => l.map(x => x.id === r.id ? { ...x, name: e.target.value } : x))}
-                style={{ flex: 1, border: "1.5px solid #E2E8F0", borderRadius: 7, padding: "5px 8px", fontSize: 13, fontWeight: 600, color: "#1E293B", outline: "none", background: "white", minWidth: 0 }} />
+        {list.map(r => {
+          const isOpen = expandedRole === r.id;
+          const hasOverrides = Object.keys(r.dayOverrides ?? {}).length > 0;
+          return (
+          <div key={r.id} style={{ borderBottom: "1px solid #F1F5F9" }}>
+            {/* Hauptzeile */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px 60px 60px 36px 28px", gap: 6, alignItems: "center", padding: "7px 0" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                <label title="Farbe wählen" style={{ position: "relative", width: 22, height: 22, flexShrink: 0, cursor: "pointer" }}>
+                  <input type="color" value={r.color} onChange={e => setList(l => l.map(x => x.id === r.id ? { ...x, color: e.target.value } : x))}
+                    style={{ position: "absolute", opacity: 0, width: "100%", height: "100%", cursor: "pointer" }} />
+                  <div style={{ width: 22, height: 22, borderRadius: "50%", background: r.color, border: "2px solid white", boxShadow: "0 0 0 1.5px " + r.color }} />
+                </label>
+                <input value={r.name} onChange={e => setList(l => l.map(x => x.id === r.id ? { ...x, name: e.target.value } : x))}
+                  style={{ flex: 1, border: "1.5px solid #E2E8F0", borderRadius: 7, padding: "5px 8px", fontSize: 13, fontWeight: 600, color: "#1E293B", outline: "none", background: "white", minWidth: 0 }} />
+              </div>
+              {["Früh", "Mittel", "Spät"].map(typ => (
+                <input key={typ} type="number" min="0" max="999" placeholder="–"
+                  value={(r.targetHours?.[typ] ?? "") === 0 ? "" : (r.targetHours?.[typ] ?? "")}
+                  onChange={e => setHours(r.id, typ, e.target.value)}
+                  style={inputStyle} />
+              ))}
+              <input type="number" min="0" max="999" placeholder="–"
+                value={(r.dailyTargetHours ?? "") === 0 ? "" : (r.dailyTargetHours ?? "")}
+                onChange={e => { const n = parseInt(e.target.value); setList(l => l.map(x => x.id === r.id ? { ...x, dailyTargetHours: isNaN(n) || n < 0 ? 0 : n } : x)); }}
+                style={{ ...inputStyle, borderColor: "#A7F3D0", background: "#ECFDF5", color: "#059669" }} />
+              <button onClick={() => setExpandedRole(isOpen ? null : r.id)}
+                title="Tagesabhängige Soll-Stunden"
+                style={{ background: hasOverrides ? "#FFF7ED" : "#F8FAFC", border: "1.5px solid " + (hasOverrides ? "#FED7AA" : "#E2E8F0"), color: hasOverrides ? "#EA580C" : "#94A3B8", borderRadius: 6, fontSize: 13, cursor: "pointer", padding: "4px 6px", fontWeight: 700 }}>
+                {isOpen ? "▲" : "▼"}
+              </button>
+              <button onClick={() => setList(l => l.filter(x => x.id !== r.id))}
+                style={{ background: "none", border: "none", color: "#CBD5E1", fontSize: 18, cursor: "pointer", padding: "0 2px", lineHeight: 1 }}>×</button>
             </div>
-            {["Früh", "Mittel", "Spät"].map(typ => (
-              <input key={typ} type="number" min="0" max="999" placeholder="–"
-                value={(r.targetHours?.[typ] ?? "") === 0 ? "" : (r.targetHours?.[typ] ?? "")}
-                onChange={e => setHours(r.id, typ, e.target.value)}
-                style={inputStyle} />
-            ))}
-            <input type="number" min="0" max="999" placeholder="–"
-              value={(r.dailyTargetHours ?? "") === 0 ? "" : (r.dailyTargetHours ?? "")}
-              onChange={e => { const n = parseInt(e.target.value); setList(l => l.map(x => x.id === r.id ? { ...x, dailyTargetHours: isNaN(n) || n < 0 ? 0 : n } : x)); }}
-              style={{ ...inputStyle, borderColor: "#A7F3D0", background: "#ECFDF5", color: "#059669" }} />
-            <button onClick={() => setList(l => l.filter(x => x.id !== r.id))}
-              style={{ background: "none", border: "none", color: "#CBD5E1", fontSize: 18, cursor: "pointer", padding: "0 2px", lineHeight: 1 }}>×</button>
+            {/* Ausklapp-Reiter: Tagesabhängige Werte */}
+            {isOpen && (
+              <div style={{ background: "#FFFBEB", border: "1.5px solid #FED7AA", borderRadius: 10, padding: "10px 12px", marginBottom: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#92400E", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 8 }}>
+                  Tagesabhängige Soll-Stunden — {r.name}
+                  <span style={{ fontWeight: 400, marginLeft: 8, color: "#B45309", textTransform: "none" }}>Leer = Standard-Wert oben gilt</span>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "40px 60px 60px 60px 60px", gap: 6, marginBottom: 6 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: "#92400E" }}>Tag</span>
+                  {["Früh h", "Mittel h", "Spät h", "Ges. h"].map(h => (
+                    <span key={h} style={{ fontSize: 11, fontWeight: 700, color: "#92400E", textAlign: "center" }}>{h}</span>
+                  ))}
+                </div>
+                {DAY_NUMS.map((dow, i) => {
+                  const ov = r.dayOverrides?.[dow] ?? {};
+                  return (
+                    <div key={dow} style={{ display: "grid", gridTemplateColumns: "40px 60px 60px 60px 60px", gap: 6, alignItems: "center", marginBottom: 4 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: "#78350F" }}>{DAY_LABELS[i]}</span>
+                      {["Früh", "Mittel", "Spät"].map(typ => (
+                        <input key={typ} type="number" min="0" max="999" placeholder={r.targetHours?.[typ] || "–"}
+                          value={(ov[typ] ?? "") === 0 ? "" : (ov[typ] ?? "")}
+                          onChange={e => setDayOverride(r.id, dow, typ, e.target.value)}
+                          style={{ ...inputStyle, borderColor: "#FDE68A", background: "#FFFDE7", color: "#78350F", width: "100%" }} />
+                      ))}
+                      <input type="number" min="0" max="999" placeholder={r.dailyTargetHours || "–"}
+                        value={(ov.total ?? "") === 0 ? "" : (ov.total ?? "")}
+                        onChange={e => setDayOverride(r.id, dow, "total", e.target.value)}
+                        style={{ ...inputStyle, borderColor: "#A7F3D0", background: "#ECFDF5", color: "#059669", width: "100%" }} />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
-        ))}
+          );
+        })}
 
         <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
           <input type="text" placeholder="Neue Rolle, z.B. Frischetheke…"
@@ -1713,12 +1773,17 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                 // roleTargetMin[roleName][typ] = Soll-Minuten, rolePlannedMin[roleName][typ] = Ist-Minuten
                 const roleTargetMin = {};
                 const rolePlannedMin = {};
+                // Wochensoll pro Abteilung+Typ aus Tageswerten aufbauen (Overrides berücksichtigen)
                 roles.forEach(r => {
                   roleTargetMin[r.name] = {};
                   rolePlannedMin[r.name] = {};
                   TYPES.forEach(typ => {
-                    const h = r.targetHours?.[typ] ?? 0;
-                    if (h > 0) roleTargetMin[r.name][typ] = h * 60;
+                    const weeklyH = weekDates.reduce((sum, d) => {
+                      const dow = d.getDay();
+                      const ov = r.dayOverrides?.[dow] ?? {};
+                      return sum + (ov[typ] ?? r.targetHours?.[typ] ?? 0);
+                    }, 0);
+                    if (weeklyH > 0) roleTargetMin[r.name][typ] = weeklyH * 60;
                     rolePlannedMin[r.name][typ] = 0;
                   });
                 });
@@ -1728,11 +1793,8 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                   (s.roles ?? []).forEach(rn => { if (rolePlannedMin[rn]) rolePlannedMin[rn][typ] = (rolePlannedMin[rn][typ] ?? 0) + dur; });
                 });
 
-                // Offener Bedarf einer Abteilung in einem Schichttyp (>0 = noch nicht erfüllt)
                 const roleTypDeficit = (rn, typ) => (roleTargetMin[rn]?.[typ] ?? 0) - (rolePlannedMin[rn]?.[typ] ?? 0);
-                // Gesamtdefizit einer Abteilung über alle Schichttypen
                 const roleDeficit = rn => TYPES.reduce((s, typ) => s + Math.max(0, roleTypDeficit(rn, typ)), 0);
-                // Größter offener Bedarf aller Abteilungen eines Mitarbeiters
                 const empRoleDeficit = emp => Math.max(0, ...(emp.defaultRoles ?? []).map(rn => roleDeficit(rn)));
 
                 const mh = marketHours ?? DEFAULT_MARKET_HOURS;
@@ -2074,7 +2136,9 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                         const rShifts = dayShifts.filter(s => (s.roles ?? (s.role ? [s.role] : [])).includes(r.name));
                         const istMin = rShifts.reduce((sum, s) => sum + toMin(s.endTime) - toMin(s.startTime), 0);
                         const istH = Math.round(istMin / 60 * 10) / 10;
-                        const sollHR = r.dailyTargetHours ?? 0;
+                        const dow = weekDates[tlDay].getDay();
+                        const ov = r.dayOverrides?.[dow] ?? {};
+                        const sollHR = ov.total ?? r.dailyTargetHours ?? 0;
                         return { r, istH, sollHR, count: rShifts.length };
                       }).filter(x => x.count > 0 || x.sollHR > 0);
                       if (!rows.length) return null;
@@ -2199,10 +2263,15 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                                 .filter(s => classifyShift(s.startTime, thr) === typ && (s.roles ? s.roles.includes(r.name) : s.role === r.name))
                                 .reduce((sum, s) => sum + toMin(s.endTime) - toMin(s.startTime), 0);
                               const istH = Math.round(istMin / 60 * 10) / 10;
-                              const sollH = r.targetHours?.[typ] ?? 0;
+                              // Wochensoll = Summe der Tageswerte (Override wenn vorhanden, sonst Standard)
+                              const sollH = weekDates.reduce((sum, d) => {
+                                const dow = d.getDay();
+                                const ov = r.dayOverrides?.[dow] ?? {};
+                                return sum + (ov[typ] ?? r.targetHours?.[typ] ?? 0);
+                              }, 0);
                               const hasSoll = sollH > 0;
                               const ok = !hasSoll || istH >= sollH;
-                              return { istH, sollH, hasSoll, ok };
+                              return { istH, sollH: Math.round(sollH * 10) / 10, hasSoll, ok };
                             });
                             return (
                               <tr key={r.id} style={{ borderTop: "1px solid #F1F5F9" }}>
