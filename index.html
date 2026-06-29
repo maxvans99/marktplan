@@ -1435,7 +1435,7 @@ function RolesModal({ roles, thresholds: initThresholds, marketHours: initMh, on
 
   return (
     <div className="ov" onClick={onClose}>
-      <div className="modal" style={{ width: "min(520px, calc(100vw - 24px))", maxHeight: "90vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
+      <div className="modal" style={{ width: "min(640px, calc(100vw - 16px))", maxHeight: "90vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
         <div className="modal-t">👷 Abteilungen / Rollen</div>
         <div className="modal-s">Lege Abteilungen und die Soll-Stunden pro Schichttyp (Früh/Mittel/Spät) pro Woche fest.</div>
 
@@ -1492,7 +1492,7 @@ function RolesModal({ roles, thresholds: initThresholds, marketHours: initMh, on
 
         {/* Tabellen-Header */}
         {list.length > 0 && (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px 60px 60px 36px 28px", gap: 6, padding: "4px 0 6px", borderBottom: "2px solid #E2E8F0", marginBottom: 4 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 54px 54px 54px 54px 34px 24px", gap: 6, padding: "4px 0 6px", borderBottom: "2px solid #E2E8F0", marginBottom: 4 }}>
             <span style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase" }}>Abteilung</span>
             {["Früh", "Mittel", "Spät"].map(t => (
               <span key={t} style={{ fontSize: 11, fontWeight: 700, color: "#1D4ED8", textTransform: "uppercase", textAlign: "center" }}>{t}<br/><span style={{ fontWeight: 400, textTransform: "none" }}>h/Tag</span></span>
@@ -1511,7 +1511,7 @@ function RolesModal({ roles, thresholds: initThresholds, marketHours: initMh, on
           return (
           <div key={r.id} style={{ borderBottom: "1px solid #F1F5F9" }}>
             {/* Hauptzeile */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px 60px 60px 36px 28px", gap: 6, alignItems: "center", padding: "7px 0" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 54px 54px 54px 54px 34px 24px", gap: 6, alignItems: "center", padding: "7px 0" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
                 <label title="Farbe wählen" style={{ position: "relative", width: 22, height: 22, flexShrink: 0, cursor: "pointer" }}>
                   <input type="color" value={r.color} onChange={e => setList(l => l.map(x => x.id === r.id ? { ...x, color: e.target.value } : x))}
