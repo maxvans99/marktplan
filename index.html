@@ -1407,6 +1407,8 @@ function RolesModal({ roles, thresholds: initThresholds, marketHours: initMh, on
   const [thr, setThr] = useState(initThresholds ?? { ...DEFAULT_THRESHOLDS });
   const [mh, setMh] = useState(initMh ?? { ...DEFAULT_MARKET_HOURS });
   const [expandedRole, setExpandedRole] = useState(null);
+  const [showSchichtzeiten, setShowSchichtzeiten] = useState(false);
+  const [showMarktzeiten, setShowMarktzeiten] = useState(false);
 
   function addRole() {
     if (!newName.trim()) return;
@@ -1441,58 +1443,72 @@ function RolesModal({ roles, thresholds: initThresholds, marketHours: initMh, on
         <div className="modal-t">👷 Abteilungen / Rollen</div>
         <div className="modal-s">Lege Abteilungen und die Soll-Stunden pro Schichttyp (Früh/Mittel/Spät) pro Woche fest.</div>
 
-        {/* Marktzeiten */}
-        <div style={{ background: "#F0F9FF", borderRadius: 10, padding: "10px 14px", marginBottom: 10, border: "1px solid #BAE6FD" }}>
-          <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em", color: "#0EA5E9", marginBottom: 8 }}>🏪 Marktzeiten</div>
-          <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ fontSize: 12, color: "#475569", fontWeight: 600 }}>Öffnet</span>
-              <input type="time" value={mh.open} onChange={e => setMh(m => ({ ...m, open: e.target.value }))}
-                style={{ padding: "4px 8px", border: "1.5px solid #BAE6FD", borderRadius: 6, fontSize: 13, outline: "none" }} />
+        {/* Marktzeiten — ausklappbar */}
+        <div style={{ background: "#F0F9FF", borderRadius: 10, marginBottom: 8, border: "1px solid #BAE6FD", overflow: "hidden" }}>
+          <button onClick={() => setShowMarktzeiten(v => !v)}
+            style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", background: "none", border: "none", cursor: "pointer" }}>
+            <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em", color: "#0EA5E9" }}>🏪 Marktzeiten</span>
+            <span style={{ fontSize: 13, color: "#0EA5E9", fontWeight: 700 }}>{showMarktzeiten ? "▲" : "▼"}</span>
+          </button>
+          {showMarktzeiten && (
+            <div style={{ padding: "0 14px 12px", display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ fontSize: 12, color: "#475569", fontWeight: 600 }}>Öffnet</span>
+                <input type="time" value={mh.open} onChange={e => setMh(m => ({ ...m, open: e.target.value }))}
+                  style={{ padding: "4px 8px", border: "1.5px solid #BAE6FD", borderRadius: 6, fontSize: 13, outline: "none" }} />
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ fontSize: 12, color: "#475569", fontWeight: 600 }}>Schließt</span>
+                <input type="time" value={mh.close} onChange={e => setMh(m => ({ ...m, close: e.target.value }))}
+                  style={{ padding: "4px 8px", border: "1.5px solid #BAE6FD", borderRadius: 6, fontSize: 13, outline: "none" }} />
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ fontSize: 10, fontWeight: 700, background: "#0F172A", color: "#fff", borderRadius: 4, padding: "1px 5px" }}>ML</span>
+                <span style={{ fontSize: 12, color: "#475569", fontWeight: 600 }}>ab</span>
+                <input type="time" value={mh.managerStart} onChange={e => setMh(m => ({ ...m, managerStart: e.target.value }))}
+                  style={{ padding: "4px 8px", border: "1.5px solid #BAE6FD", borderRadius: 6, fontSize: 13, outline: "none" }} />
+                <span style={{ fontSize: 12, color: "#475569", fontWeight: 600 }}>bis</span>
+                <input type="time" value={mh.managerEnd} onChange={e => setMh(m => ({ ...m, managerEnd: e.target.value }))}
+                  style={{ padding: "4px 8px", border: "1.5px solid #BAE6FD", borderRadius: 6, fontSize: 13, outline: "none" }} />
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ fontSize: 12, color: "#475569", fontWeight: 600 }}>Gesamt-Soll</span>
+                <input type="number" min="0" max="9999" placeholder="z.B. 300"
+                  value={mh.totalTargetHours || ""}
+                  onChange={e => { const n = parseInt(e.target.value); setMh(m => ({ ...m, totalTargetHours: isNaN(n) ? 0 : n })); }}
+                  style={{ padding: "4px 8px", border: "1.5px solid #BFDBFE", borderRadius: 6, fontSize: 13, outline: "none", width: 80, background: "#EFF6FF", color: "#1D4ED8", fontWeight: 700 }} />
+                <span style={{ fontSize: 12, color: "#475569" }}>h/Woche</span>
+              </div>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ fontSize: 12, color: "#475569", fontWeight: 600 }}>Schließt</span>
-              <input type="time" value={mh.close} onChange={e => setMh(m => ({ ...m, close: e.target.value }))}
-                style={{ padding: "4px 8px", border: "1.5px solid #BAE6FD", borderRadius: 6, fontSize: 13, outline: "none" }} />
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ fontSize: 10, fontWeight: 700, background: "#0F172A", color: "#fff", borderRadius: 4, padding: "1px 5px" }}>ML</span>
-              <span style={{ fontSize: 12, color: "#475569", fontWeight: 600 }}>ab</span>
-              <input type="time" value={mh.managerStart} onChange={e => setMh(m => ({ ...m, managerStart: e.target.value }))}
-                style={{ padding: "4px 8px", border: "1.5px solid #BAE6FD", borderRadius: 6, fontSize: 13, outline: "none" }} />
-              <span style={{ fontSize: 12, color: "#475569", fontWeight: 600 }}>bis</span>
-              <input type="time" value={mh.managerEnd} onChange={e => setMh(m => ({ ...m, managerEnd: e.target.value }))}
-                style={{ padding: "4px 8px", border: "1.5px solid #BAE6FD", borderRadius: 6, fontSize: 13, outline: "none" }} />
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ fontSize: 12, color: "#475569", fontWeight: 600 }}>Gesamt-Soll</span>
-              <input type="number" min="0" max="9999" placeholder="z.B. 300"
-                value={mh.totalTargetHours || ""}
-                onChange={e => { const n = parseInt(e.target.value); setMh(m => ({ ...m, totalTargetHours: isNaN(n) ? 0 : n })); }}
-                style={{ padding: "4px 8px", border: "1.5px solid #BFDBFE", borderRadius: 6, fontSize: 13, outline: "none", width: 80, background: "#EFF6FF", color: "#1D4ED8", fontWeight: 700 }} />
-              <span style={{ fontSize: 12, color: "#475569" }}>h/Woche</span>
-            </div>
-          </div>
+          )}
         </div>
 
-        {/* Schichtzeiten */}
-        <div style={{ background: "#F8FAFC", borderRadius: 10, padding: "10px 14px", marginBottom: 14 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em", color: "#94A3B8", marginBottom: 10 }}>Schichtzeiten</div>
-          {[
-            { key: "frueh",   label: "Früh",   color: "#DBEAFE", tc: "#1D4ED8", sk: "fruehStart",  ek: "fruehEnd"   },
-            { key: "mittel",  label: "Mittel", color: "#D1FAE5", tc: "#065F46", sk: "mittelStart", ek: "mittelEnd"  },
-            { key: "spaet",   label: "Spät",   color: "#FEE2E2", tc: "#991B1B", sk: "spaetStart",  ek: "spaetEnd"   },
-          ].map(({ label, color, tc, sk, ek }) => (
-            <div key={sk} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-              <span style={{ fontSize: 12, fontWeight: 700, color: tc, background: color, borderRadius: 5, padding: "2px 8px", minWidth: 44, textAlign: "center" }}>{label}</span>
-              <span style={{ fontSize: 12, color: "#64748B" }}>von</span>
-              <input type="time" value={thr[sk] ?? ""} onChange={e => setThr(t => ({ ...t, [sk]: e.target.value }))}
-                style={{ padding: "4px 8px", border: "1.5px solid #E2E8F0", borderRadius: 6, fontSize: 13, outline: "none" }} />
-              <span style={{ fontSize: 12, color: "#64748B" }}>bis</span>
-              <input type="time" value={thr[ek] ?? ""} onChange={e => setThr(t => ({ ...t, [ek]: e.target.value }))}
-                style={{ padding: "4px 8px", border: "1.5px solid #E2E8F0", borderRadius: 6, fontSize: 13, outline: "none" }} />
+        {/* Schichtzeiten — ausklappbar */}
+        <div style={{ background: "#F8FAFC", borderRadius: 10, marginBottom: 14, border: "1px solid #E2E8F0", overflow: "hidden" }}>
+          <button onClick={() => setShowSchichtzeiten(v => !v)}
+            style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", background: "none", border: "none", cursor: "pointer" }}>
+            <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em", color: "#64748B" }}>⏰ Schichtzeiten</span>
+            <span style={{ fontSize: 13, color: "#64748B", fontWeight: 700 }}>{showSchichtzeiten ? "▲" : "▼"}</span>
+          </button>
+          {showSchichtzeiten && (
+            <div style={{ padding: "0 14px 12px" }}>
+              {[
+                { label: "Früh",   color: "#DBEAFE", tc: "#1D4ED8", sk: "fruehStart",  ek: "fruehEnd"  },
+                { label: "Mittel", color: "#D1FAE5", tc: "#065F46", sk: "mittelStart", ek: "mittelEnd" },
+                { label: "Spät",   color: "#FEE2E2", tc: "#991B1B", sk: "spaetStart",  ek: "spaetEnd"  },
+              ].map(({ label, color, tc, sk, ek }) => (
+                <div key={sk} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: tc, background: color, borderRadius: 5, padding: "2px 8px", minWidth: 44, textAlign: "center" }}>{label}</span>
+                  <span style={{ fontSize: 12, color: "#64748B" }}>von</span>
+                  <input type="time" value={thr[sk] ?? ""} onChange={e => setThr(t => ({ ...t, [sk]: e.target.value }))}
+                    style={{ padding: "4px 8px", border: "1.5px solid #E2E8F0", borderRadius: 6, fontSize: 13, outline: "none" }} />
+                  <span style={{ fontSize: 12, color: "#64748B" }}>bis</span>
+                  <input type="time" value={thr[ek] ?? ""} onChange={e => setThr(t => ({ ...t, [ek]: e.target.value }))}
+                    style={{ padding: "4px 8px", border: "1.5px solid #E2E8F0", borderRadius: 6, fontSize: 13, outline: "none" }} />
+                </div>
+              ))}
             </div>
-          ))}
+          )}
         </div>
 
         {/* Tabellen-Header */}
