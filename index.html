@@ -1478,11 +1478,12 @@ function RolesModal({ roles, thresholds: initThresholds, marketHours: initMh, on
 
         {/* Tabellen-Header */}
         {list.length > 0 && (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px 60px 28px", gap: 6, padding: "4px 0 6px", borderBottom: "2px solid #E2E8F0", marginBottom: 4 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px 60px 60px 28px", gap: 6, padding: "4px 0 6px", borderBottom: "2px solid #E2E8F0", marginBottom: 4 }}>
             <span style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase" }}>Abteilung</span>
             {["Früh h", "Mittel h", "Spät h"].map(t => (
               <span key={t} style={{ fontSize: 11, fontWeight: 700, color: "#1D4ED8", textTransform: "uppercase", textAlign: "center" }}>{t}</span>
             ))}
+            <span style={{ fontSize: 11, fontWeight: 700, color: "#059669", textTransform: "uppercase", textAlign: "center" }}>Tag h</span>
             <span />
           </div>
         )}
@@ -1490,7 +1491,7 @@ function RolesModal({ roles, thresholds: initThresholds, marketHours: initMh, on
         {list.length === 0 && <div style={{ fontSize: 13, color: "#94A3B8", padding: "8px 0 14px" }}>Noch keine Abteilungen angelegt.</div>}
 
         {list.map(r => (
-          <div key={r.id} style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px 60px 28px", gap: 6, alignItems: "center", padding: "7px 0", borderBottom: "1px solid #F1F5F9" }}>
+          <div key={r.id} style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px 60px 60px 28px", gap: 6, alignItems: "center", padding: "7px 0", borderBottom: "1px solid #F1F5F9" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
               <label title="Farbe wählen" style={{ position: "relative", width: 22, height: 22, flexShrink: 0, cursor: "pointer" }}>
                 <input type="color" value={r.color} onChange={e => setList(l => l.map(x => x.id === r.id ? { ...x, color: e.target.value } : x))}
@@ -1506,6 +1507,10 @@ function RolesModal({ roles, thresholds: initThresholds, marketHours: initMh, on
                 onChange={e => setHours(r.id, typ, e.target.value)}
                 style={inputStyle} />
             ))}
+            <input type="number" min="0" max="999" placeholder="–"
+              value={(r.dailyTargetHours ?? "") === 0 ? "" : (r.dailyTargetHours ?? "")}
+              onChange={e => { const n = parseInt(e.target.value); setList(l => l.map(x => x.id === r.id ? { ...x, dailyTargetHours: isNaN(n) || n < 0 ? 0 : n } : x)); }}
+              style={{ ...inputStyle, borderColor: "#A7F3D0", background: "#ECFDF5", color: "#059669" }} />
             <button onClick={() => setList(l => l.filter(x => x.id !== r.id))}
               style={{ background: "none", border: "none", color: "#CBD5E1", fontSize: 18, cursor: "pointer", padding: "0 2px", lineHeight: 1 }}>×</button>
           </div>
@@ -2069,9 +2074,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                         const rShifts = dayShifts.filter(s => (s.roles ?? (s.role ? [s.role] : [])).includes(r.name));
                         const istMin = rShifts.reduce((sum, s) => sum + toMin(s.endTime) - toMin(s.startTime), 0);
                         const istH = Math.round(istMin / 60 * 10) / 10;
-                        // Tages-Soll = Wochen-Soll pro Schichttyp / Arbeitstage (5)
-                        const sollH = TYPES.reduce((sum, typ) => sum + (r.targetHours?.[typ] ?? 0), 0) / 5;
-                        const sollHR = Math.round(sollH * 10) / 10;
+                        const sollHR = r.dailyTargetHours ?? 0;
                         return { r, istH, sollHR, count: rShifts.length };
                       }).filter(x => x.count > 0 || x.sollHR > 0);
                       if (!rows.length) return null;
