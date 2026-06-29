@@ -197,7 +197,7 @@
   .btn-logout-top:hover { background: #B91C1C; }
   .sb-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 99; }
 
-  @media (max-width: 768px) {
+  @media (max-width: 800px) {
     /* Top bar */
     .mob-bar {
       display: flex; align-items: center; justify-content: space-between;
@@ -240,8 +240,8 @@
 
     /* Week nav */
     .wn { gap: 6px; }
-    .wn-label { font-size: 12px; min-width: 0; flex: 1; text-align: center; }
-    .wn-btn { font-size: 12px; padding: 6px 10px; }
+    .wn-label { font-size: 11px; min-width: 110px; flex: 1; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .wn-btn { font-size: 11px; padding: 6px 8px; white-space: nowrap; }
 
     /* Week grid: horizontal scroll */
     .grid-head { grid-template-columns: 110px repeat(7, 76px); }
@@ -252,8 +252,9 @@
     .av-row { flex-wrap: wrap; gap: 6px; }
     .tr input[type=time] { width: 96px; font-size: 12px; }
 
-    /* Page header */
-    .ph { flex-direction: column; gap: 8px; align-items: flex-start; }
+    /* Page header — logout button already in mob-bar on mobile */
+    .btn-logout-top { display: none; }
+    .ph { flex-direction: row; justify-content: flex-start; align-items: flex-start; }
     .btn-add-emp { font-size: 12px; padding: 8px 12px; }
 
     /* Sched rows */
@@ -261,10 +262,13 @@
     .sched-day { width: auto; }
 
     /* Modals */
-    .modal { width: calc(100vw - 24px); max-width: 100%; padding: 18px 16px; border-radius: 14px; }
+    .modal { width: calc(100vw - 16px) !important; max-width: 100%; padding: 16px 14px; border-radius: 14px; }
     .modal-t { font-size: 15px; }
     .macts { gap: 8px; }
     .macts button { font-size: 13px; padding: 9px; }
+    /* RolesModal Tabelle scrollbar horizontal */
+    .roles-tbl { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 -14px; padding: 0 14px; }
+    .roles-tbl-inner { min-width: 420px; }
 
     /* Role cards */
     .role-grid { grid-template-columns: 1fr 1fr !important; }
@@ -286,7 +290,7 @@
     .role-chip { padding: 4px 8px !important; font-size: 12px !important; }
   }
 
-  @media (min-width: 769px) {
+  @media (min-width: 801px) {
     .sb-close-row { display: none; }
   }
 
@@ -1511,7 +1515,8 @@ function RolesModal({ roles, thresholds: initThresholds, marketHours: initMh, on
           )}
         </div>
 
-        {/* Tabellen-Header */}
+        {/* Tabellen-Header + Zeilen: horizontal scrollbar auf Mobile */}
+        <div className="roles-tbl"><div className="roles-tbl-inner">
         {list.length > 0 && (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 54px 54px 54px 54px 34px 24px", gap: 6, padding: "4px 0 6px", borderBottom: "2px solid #E2E8F0", marginBottom: 4 }}>
             <span style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase" }}>Abteilung</span>
@@ -1596,6 +1601,7 @@ function RolesModal({ roles, thresholds: initThresholds, marketHours: initMh, on
           </div>
           );
         })}
+        </div></div>{/* end roles-tbl */}
 
         <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
           <input type="text" placeholder="Neue Rolle, z.B. Frischetheke…"
