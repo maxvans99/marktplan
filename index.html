@@ -991,7 +991,7 @@ function EmployeeView({ me, marketId, availability, shifts, weekStart, weekDates
       <div className="mob-bar">
         <button className="burger" onClick={() => setSbOpen(true)}>☰</button>
         <span className="mob-logo">Markt<b>Plan</b></span>
-        <button className="mob-logout" onClick={onLogout}>Abmelden</button>
+        <button className="mob-logout" onClick={() => { if (saved === false) { setShowLogoutConfirm(true); } else { onLogout(); } }}>Abmelden</button>
       </div>
       {sbOpen && <div className="sb-overlay" onClick={() => setSbOpen(false)} />}
       <Sidebar role="employee" marketId={marketId} onMarketChange={() => {}} onLogout={() => { if (saved === false) { setShowLogoutConfirm(true); setSbOpen(false); } else { onLogout(); } }}
@@ -1003,7 +1003,7 @@ function EmployeeView({ me, marketId, availability, shifts, weekStart, weekDates
             <div className="ph-title">Mein Schichtplan</div>
             <div className="ph-sub">{me?.name} · {market?.name}</div>
           </div>
-          <button className="btn-logout-top" onClick={onLogout}>← Abmelden</button>
+          <button className="btn-logout-top" onClick={() => { if (saved === false) { setShowLogoutConfirm(true); } else { onLogout(); } }}>← Abmelden</button>
         </div>
 
         <WeekNav weekStart={weekStart} weekDates={weekDates} onChange={onWeekChange} />
@@ -1449,6 +1449,14 @@ function RolesModal({ roles, thresholds: initThresholds, marketHours: initMh, on
               <input type="time" value={mh.managerEnd} onChange={e => setMh(m => ({ ...m, managerEnd: e.target.value }))}
                 style={{ padding: "4px 8px", border: "1.5px solid #BAE6FD", borderRadius: 6, fontSize: 13, outline: "none" }} />
             </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ fontSize: 12, color: "#475569", fontWeight: 600 }}>Gesamt-Soll</span>
+              <input type="number" min="0" max="9999" placeholder="z.B. 300"
+                value={mh.totalTargetHours || ""}
+                onChange={e => { const n = parseInt(e.target.value); setMh(m => ({ ...m, totalTargetHours: isNaN(n) ? 0 : n })); }}
+                style={{ padding: "4px 8px", border: "1.5px solid #BFDBFE", borderRadius: 6, fontSize: 13, outline: "none", width: 80, background: "#EFF6FF", color: "#1D4ED8", fontWeight: 700 }} />
+              <span style={{ fontSize: 12, color: "#475569" }}>h/Woche</span>
+            </div>
           </div>
         </div>
 
@@ -1663,7 +1671,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
             <div className="stat"><div className="stat-v">{mktEmps.length}</div><div className="stat-k">Mitarbeiter</div></div>
             <div className="stat"><div className="stat-v">{totalAvail}</div><div className="stat-k">Verfügbar diese Woche</div></div>
             <div className="stat"><div className="stat-v" style={{ color: totalShifts > 0 ? "#1D4ED8" : "#0F172A" }}>{totalShifts}</div><div className="stat-k">Schichten geplant</div></div>
-            <div className="stat"><div className="stat-v" style={{ color: "#059669" }}>{totalIstHours}h</div><div className="stat-k">Stunden geplant (Ist)</div></div>
+            <div className="stat"><div className="stat-v" style={{ color: totalIstHours >= (marketHours?.totalTargetHours ?? 0) && (marketHours?.totalTargetHours ?? 0) > 0 ? "#059669" : "#0F172A" }}>{totalIstHours}h{(marketHours?.totalTargetHours ?? 0) > 0 ? `/${marketHours.totalTargetHours}h` : ""}</div><div className="stat-k">Stunden Ist{(marketHours?.totalTargetHours ?? 0) > 0 ? "/Soll" : " geplant"}</div></div>
           </div>
 
           <WeekNav weekStart={weekStart} weekDates={weekDates} onChange={onWeekChange} />
