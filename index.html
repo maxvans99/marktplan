@@ -319,7 +319,7 @@ const uid = () => ++_id;
 // ─── PERSISTENZ (localStorage) ───────────────────────────────────────────────
 const LS_PREFIX  = "marktplan:";
 const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
-const APP_BUILD  = "20260629-1"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
+const APP_BUILD  = "20260629-2"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
 
 function clearAllPersistedState() {
   try {
@@ -437,13 +437,15 @@ const DEFAULT_ROLES = [
   { id: 6, name: "Bäckerei",     color: "#F59E0B", targetHours: {} },
   { id: 7, name: "Marktleiter",  color: "#1E293B", targetHours: {} },
 ];
-const DEFAULT_THRESHOLDS = { frueh: "11:00", spaet: "14:00" };
+const DEFAULT_THRESHOLDS = { fruehStart: "06:00", fruehEnd: "11:00", mittelStart: "10:00", mittelEnd: "16:00", spaetStart: "14:00", spaetEnd: "22:00" };
 const DEFAULT_MARKET_HOURS = { open: "07:00", close: "20:00", managerStart: "06:30", managerEnd: "20:30" };
 
 function classifyShift(startTime, thr) {
   if (!startTime) return "Früh";
-  if (startTime < thr.frueh) return "Früh";
-  if (startTime < thr.spaet) return "Mittel";
+  const fruehEnd   = thr.fruehEnd   ?? thr.frueh ?? "11:00";
+  const spaetStart = thr.spaetStart ?? thr.spaet ?? "14:00";
+  if (startTime < fruehEnd)   return "Früh";
+  if (startTime < spaetStart) return "Mittel";
   return "Spät";
 }
 
@@ -1475,19 +1477,22 @@ function RolesModal({ roles, thresholds: initThresholds, marketHours: initMh, on
 
         {/* Schichtzeiten */}
         <div style={{ background: "#F8FAFC", borderRadius: 10, padding: "10px 14px", marginBottom: 14 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em", color: "#94A3B8", marginBottom: 8 }}>Schichtzeiten</div>
-          <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ fontSize: 12, color: "#475569", fontWeight: 600 }}>Früh endet um</span>
-              <input type="time" value={thr.frueh} onChange={e => setThr(t => ({ ...t, frueh: e.target.value }))}
+          <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em", color: "#94A3B8", marginBottom: 10 }}>Schichtzeiten</div>
+          {[
+            { key: "frueh",   label: "Früh",   color: "#DBEAFE", tc: "#1D4ED8", sk: "fruehStart",  ek: "fruehEnd"   },
+            { key: "mittel",  label: "Mittel", color: "#D1FAE5", tc: "#065F46", sk: "mittelStart", ek: "mittelEnd"  },
+            { key: "spaet",   label: "Spät",   color: "#FEE2E2", tc: "#991B1B", sk: "spaetStart",  ek: "spaetEnd"   },
+          ].map(({ label, color, tc, sk, ek }) => (
+            <div key={sk} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: tc, background: color, borderRadius: 5, padding: "2px 8px", minWidth: 44, textAlign: "center" }}>{label}</span>
+              <span style={{ fontSize: 12, color: "#64748B" }}>von</span>
+              <input type="time" value={thr[sk] ?? ""} onChange={e => setThr(t => ({ ...t, [sk]: e.target.value }))}
+                style={{ padding: "4px 8px", border: "1.5px solid #E2E8F0", borderRadius: 6, fontSize: 13, outline: "none" }} />
+              <span style={{ fontSize: 12, color: "#64748B" }}>bis</span>
+              <input type="time" value={thr[ek] ?? ""} onChange={e => setThr(t => ({ ...t, [ek]: e.target.value }))}
                 style={{ padding: "4px 8px", border: "1.5px solid #E2E8F0", borderRadius: 6, fontSize: 13, outline: "none" }} />
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ fontSize: 12, color: "#475569", fontWeight: 600 }}>Spät beginnt ab</span>
-              <input type="time" value={thr.spaet} onChange={e => setThr(t => ({ ...t, spaet: e.target.value }))}
-                style={{ padding: "4px 8px", border: "1.5px solid #E2E8F0", borderRadius: 6, fontSize: 13, outline: "none" }} />
-            </div>
-          </div>
+          ))}
         </div>
 
         {/* Tabellen-Header */}
@@ -1850,36 +1855,38 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                     .find(x => x.a.endTime >= mh.managerEnd);
                   if (mlClose) { planOne(mlClose.a, mlClose.emp, null, toMin(mh.managerEnd)); alreadyPlanned.add(mlClose.emp.id); }
 
+                  const fruehEnd   = thr.fruehEnd   ?? thr.frueh ?? "11:00";
+                  const spaetStart = thr.spaetStart ?? thr.spaet ?? "14:00";
+
                   // ── Schritt 2: Früh-SK + Spät-SK (Schließkraft bevorzugt) ──
                   const fruehSK = byPrio(avail()).find(x => x.a.startTime <= mh.open);
                   if (fruehSK) plan(fruehSK);
-                  const spaetSK = byPrio(avail()).find(x => x.a.startTime >= thr.spaet);
+                  const spaetSK = byPrio(avail()).find(x => x.a.startTime >= spaetStart);
                   if (spaetSK) plan(spaetSK);
 
                   // ── Schritt 3: Kasse Früh + Spät sicherstellen ──
-                  const kasseFrueh = byPrio(avail().filter(x => (x.emp.defaultRoles ?? []).includes("Kasse") && x.a.startTime < thr.frueh)).shift();
+                  const kasseFrueh = byPrio(avail().filter(x => (x.emp.defaultRoles ?? []).includes("Kasse") && x.a.startTime < fruehEnd)).shift();
                   if (kasseFrueh) plan(kasseFrueh);
-                  const kasseSpaet = byPrio(avail().filter(x => (x.emp.defaultRoles ?? []).includes("Kasse") && x.a.startTime >= thr.spaet)).shift();
+                  const kasseSpaet = byPrio(avail().filter(x => (x.emp.defaultRoles ?? []).includes("Kasse") && x.a.startTime >= spaetStart)).shift();
                   if (kasseSpaet) plan(kasseSpaet);
 
                   // ── Schritt 4: Liefertag → Mittelschicht bevorzugt auffüllen ──
                   if (isDeliveryDay) {
-                    const mittelAvail = byPrio(avail().filter(x => x.a.startTime >= thr.frueh && x.a.startTime < thr.spaet));
+                    const mittelAvail = byPrio(avail().filter(x => x.a.startTime >= fruehEnd && x.a.startTime < spaetStart));
                     mittelAvail.slice(0, 2).forEach(x => plan(x));
                   }
 
-                  // ── Schritt 5: Gleichmäßig Früh/Spät auffüllen — laufende Zähler statt O(n²) ──
-                  // Vorberechnung: alle bereits geplanten Schichten des Tages per Map
+                  // ── Schritt 5: Gleichmäßig Früh/Spät auffüllen ──
                   const dayShiftMap = new Map();
                   [...shifts, ...newShifts].filter(s => s.date === ds && mktEmpIdSet.has(s.employeeId))
                     .forEach(s => dayShiftMap.set(s.employeeId, s));
-                  let cf = [...alreadyPlanned].filter(id => { const s = dayShiftMap.get(id); return s && s.startTime < thr.frueh; }).length;
-                  let cs = [...alreadyPlanned].filter(id => { const s = dayShiftMap.get(id); return s && s.startTime >= thr.spaet; }).length;
+                  let cf = [...alreadyPlanned].filter(id => { const s = dayShiftMap.get(id); return s && s.startTime < fruehEnd; }).length;
+                  let cs = [...alreadyPlanned].filter(id => { const s = dayShiftMap.get(id); return s && s.startTime >= spaetStart; }).length;
 
                   byPrio(avail()).forEach(x => {
                     if (alreadyPlanned.has(x.emp.id)) return;
-                    const isFrueh = x.a.startTime < thr.frueh;
-                    const isSpaet = x.a.startTime >= thr.spaet;
+                    const isFrueh = x.a.startTime < fruehEnd;
+                    const isSpaet = x.a.startTime >= spaetStart;
                     const isMittel = !isFrueh && !isSpaet;
                     if (isMittel && !isDeliveryDay && cf < 2 && cs < 2) return;
                     if (isFrueh && cf > cs + 1) return;
@@ -2245,7 +2252,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                     <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: "#94A3B8", marginBottom: 10 }}>
                       Wochenbelegung nach Schichttyp
                       <span style={{ fontWeight: 400, color: "#CBD5E1", marginLeft: 8, textTransform: "none", letterSpacing: 0 }}>
-                        Früh &lt; {thr.frueh} · Spät ab {thr.spaet}
+                        Früh bis {thr.fruehEnd ?? thr.frueh ?? "11:00"} · Spät ab {thr.spaetStart ?? thr.spaet ?? "14:00"}
                       </span>
                     </div>
                     <div style={{ overflowX: "auto" }}>
