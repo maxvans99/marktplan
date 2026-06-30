@@ -685,7 +685,9 @@ function App() {
     Object.fromEntries(MARKETS.map(m => [m.id, { roles: DEFAULT_ROLES.map(r => ({ ...r })), thresholds: { ...DEFAULT_THRESHOLDS } }]))
   );
   const [managerCreds, setManagerCreds] = usePersistedState("managerCreds", () => ({ ...DEFAULT_MANAGER_CREDS }));
-  const [deadlineDays, setDeadlineDays] = usePersistedState("deadlineDays", DEFAULT_DEADLINE_DAYS);
+  const [deadlineDaysByMarket, setDeadlineDaysByMarket] = usePersistedState("deadlineDays", () =>
+    Object.fromEntries(MARKETS.map(m => [m.id, DEFAULT_DEADLINE_DAYS]))
+  );
 
   useEffect(() => { try { localStorage.setItem(LS_PREFIX + "version", LS_VERSION); } catch {} }, []);
 
@@ -731,7 +733,7 @@ function App() {
   if (page === "employee") {
     const me = employees.find(e => e.id === myEmployeeId);
     return (
-      <EmployeeView {...common} me={me} marketId={marketId} deadlineDays={deadlineDays}
+      <EmployeeView {...common} me={me} marketId={marketId} deadlineDays={deadlineDaysByMarket[marketId] ?? DEFAULT_DEADLINE_DAYS}
         onSave={avails => saveAvailability(myEmployeeId, avails)}
         onChangePassword={async newPw => {
           const passwordHash = await hashPw(newPw, String(myEmployeeId));
@@ -745,7 +747,7 @@ function App() {
 
   return (
     <ManagerView {...common} marketId={marketId} onMarketChange={isAdmin ? setMarketId : null} isAdmin={isAdmin}
-      deadlineDays={deadlineDays} onUpdateDeadlineDays={setDeadlineDays}
+      deadlineDaysByMarket={deadlineDaysByMarket} onUpdateDeadlineDaysByMarket={setDeadlineDaysByMarket}
       onAddShift={s => setShifts(p => [...p, { ...s, id: uid() }])}
       onDelShift={id => setShifts(p => p.filter(s => s.id !== id))}
       onAddEmployee={async (name, pw, wh, defRoles) => {
@@ -1684,8 +1686,90 @@ function RolesModal({ roles, thresholds: initThresholds, marketHours: initMh, on
   );
 }
 
+// ─── EINTRAGEFRIST MODAL (pro Markt, mit Mini-Kalender) ──────────────────────
+function DeadlineModal({ deadlineDaysByMarket, onSave, onClose }) {
+  const [days, setDays] = useState(() =>
+    Object.fromEntries(MARKETS.map(m => [m.id, deadlineDaysByMarket?.[m.id] ?? DEFAULT_DEADLINE_DAYS]))
+  );
+  const [calMarket, setCalMarket] = useState(MARKETS[0].id);
+
+  const now = new Date();
+  const year = now.getFullYear(), month = now.getMonth();
+  const monthLabel = now.toLocaleDateString("de-DE", { month: "long", year: "numeric" });
+  const firstOfMonth = new Date(year, month, 1);
+  const startOffset = (firstOfMonth.getDay() + 6) % 7; // Mo=0 .. So=6
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const todayStr = fmtISO(now);
+
+  const currentDays = days[calMarket] ?? DEFAULT_DEADLINE_DAYS;
+  const isDeadlineDay = d => (d.getDay() + currentDays) % 7 === 1; // Tag X vor Montag
+
+  const cells = [];
+  for (let i = 0; i < startOffset; i++) cells.push(null);
+  for (let day = 1; day <= daysInMonth; day++) cells.push(new Date(year, month, day));
+
+  return (
+    <div className="ov" onClick={onClose}>
+      <div className="modal" style={{ width: "min(440px, calc(100vw - 24px))", maxHeight: "90vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
+        <div className="modal-t">⏱️ Eintragefrist</div>
+        <div className="modal-s">Wie viele Tage vor Wochenbeginn (Montag) endet die Frist für Mitarbeiter, ihre Verfügbarkeit einzutragen? Pro Markt einstellbar. Standard: {DEFAULT_DEADLINE_DAYS} Tage (Mittwoch 23:59 der Vorwoche).</div>
+
+        {MARKETS.map(m => (
+          <div key={m.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "6px 0", borderBottom: "1px solid #F1F5F9" }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: "#1E293B", cursor: "pointer", textDecoration: calMarket === m.id ? "underline" : "none" }}
+              onClick={() => setCalMarket(m.id)}>{m.name}</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <input type="number" min="0" max="21" value={days[m.id] ?? DEFAULT_DEADLINE_DAYS}
+                onChange={e => { const n = parseInt(e.target.value); setDays(p => ({ ...p, [m.id]: isNaN(n) || n < 0 ? 0 : n })); setCalMarket(m.id); }}
+                style={{ width: 56, padding: "4px 6px", border: "1.5px solid #E2E8F0", borderRadius: 6, fontSize: 12, fontWeight: 700, textAlign: "center", outline: "none" }} />
+              <span style={{ fontSize: 11, color: "#94A3B8" }}>Tage</span>
+            </div>
+          </div>
+        ))}
+
+        {/* Mini-Kalender: zeigt die Fristtage des gewählten Markts im aktuellen Monat */}
+        <div style={{ marginTop: 14, background: "#F8FAFC", borderRadius: 10, padding: "12px 14px" }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", marginBottom: 8, textTransform: "capitalize" }}>
+            {monthLabel} — Fristtage für {MARKETS.find(m => m.id === calMarket)?.name}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 3, marginBottom: 4 }}>
+            {["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"].map(d => (
+              <span key={d} style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", textAlign: "center" }}>{d}</span>
+            ))}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 3 }}>
+            {cells.map((d, i) => {
+              if (!d) return <span key={i} />;
+              const isToday = fmtISO(d) === todayStr;
+              const isDeadline = isDeadlineDay(d);
+              return (
+                <div key={i} style={{
+                  aspectRatio: "1", display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 11, fontWeight: isDeadline ? 800 : 500, borderRadius: 6,
+                  background: isDeadline ? "#FEE2E2" : "transparent",
+                  color: isDeadline ? "#DC2626" : "#1E293B",
+                  border: isToday ? "1.5px solid #3B82F6" : "1.5px solid transparent",
+                }}>{d.getDate()}</div>
+              );
+            })}
+          </div>
+          <div style={{ display: "flex", gap: 14, marginTop: 8, fontSize: 11, color: "#64748B" }}>
+            <span><span style={{ display: "inline-block", width: 9, height: 9, borderRadius: 3, background: "#FEE2E2", border: "1px solid #FCA5A5", marginRight: 4, verticalAlign: "middle" }} />Fristtag, 23:59 Uhr</span>
+            <span><span style={{ display: "inline-block", width: 9, height: 9, borderRadius: 3, border: "1.5px solid #3B82F6", marginRight: 4, verticalAlign: "middle" }} />Heute</span>
+          </div>
+        </div>
+
+        <div className="macts" style={{ marginTop: 16 }}>
+          <button className="btn-cancel" onClick={onClose}>Abbrechen</button>
+          <button className="btn-ok" onClick={() => { onSave(days); onClose(); }}>Speichern</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── MARKTLEITUNG-ANSICHT ─────────────────────────────────────────────────────
-function ManagerView({ marketId, onMarketChange, isAdmin, employees, availability, shifts, weekStart, weekDates, onWeekChange, onAddShift, onDelShift, onAddEmployee, onDeleteEmployee, onUpdateEmployee, onImportAvailability, deliveryConfig, onUpdateDelivery, roles, thresholds, marketHours, onUpdateRoles, onUpdateMarketHours, onBulkAddShifts, onLogout, onResetData, managerCreds, onUpdateManagerCreds, deadlineDays, onUpdateDeadlineDays }) {
+function ManagerView({ marketId, onMarketChange, isAdmin, employees, availability, shifts, weekStart, weekDates, onWeekChange, onAddShift, onDelShift, onAddEmployee, onDeleteEmployee, onUpdateEmployee, onImportAvailability, deliveryConfig, onUpdateDelivery, roles, thresholds, marketHours, onUpdateRoles, onUpdateMarketHours, onBulkAddShifts, onLogout, onResetData, managerCreds, onUpdateManagerCreds, deadlineDaysByMarket, onUpdateDeadlineDaysByMarket }) {
   const [sbOpen, setSbOpen] = useState(false);
   const [modal, setModal] = useState(null);
   const [delEmpModal, setDelEmpModal] = useState(null);
@@ -2470,34 +2554,12 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
         );
       })()}
 
-      {/* Eintragefrist Modal (nur Admin) */}
-      {showDeadline && isAdmin && (() => {
-        const current = deadlineDays ?? DEFAULT_DEADLINE_DAYS;
-        return (
-          <div className="ov" onClick={() => setShowDeadline(false)}>
-            <div className="modal" style={{ width: "min(420px, calc(100vw - 24px))", maxHeight: "90vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
-              <div className="modal-t">⏱️ Eintragefrist</div>
-              <div className="modal-s">Wie viele Tage vor Wochenbeginn (Montag) endet die Frist für Mitarbeiter, ihre Verfügbarkeit einzutragen? Standard: {DEFAULT_DEADLINE_DAYS} Tage (Mittwoch 23:59 der Vorwoche). Gilt für alle Märkte.</div>
-              <div className="field">
-                <label>Tage vor Wochenbeginn</label>
-                <input type="number" min="0" max="21" id="deadline-days-input" defaultValue={current}
-                  style={{ fontFamily: "monospace", width: 80 }} />
-              </div>
-              <div style={{ fontSize: 12, color: "#94A3B8", marginBottom: 4 }}>
-                Aktuell: Frist endet jeweils {current} Tag{current === 1 ? "" : "e"} vor Montag, 23:59 Uhr.
-              </div>
-              <div className="macts" style={{ display: "flex", gap: 8, marginTop: 16 }}>
-                <button className="btn-cancel" style={{ flex: 1 }} onClick={() => setShowDeadline(false)}>Abbrechen</button>
-                <button className="btn-ok" style={{ flex: 2 }} onClick={() => {
-                  const val = parseInt(document.getElementById("deadline-days-input")?.value);
-                  if (!isNaN(val) && val >= 0) onUpdateDeadlineDays(val);
-                  setShowDeadline(false);
-                }}>Speichern</button>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
+      {/* Eintragefrist Modal (nur Admin, pro Markt) */}
+      {showDeadline && isAdmin && (
+        <DeadlineModal deadlineDaysByMarket={deadlineDaysByMarket ?? {}}
+          onSave={updated => onUpdateDeadlineDaysByMarket(updated)}
+          onClose={() => setShowDeadline(false)} />
+      )}
 
       {/* Proposal bearbeiten Modal */}
       {editProposal && (() => {
