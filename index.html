@@ -442,6 +442,7 @@ const DEFAULT_ROLES = [
   { id: 7, name: "Marktleiter",  color: "#1E293B", targetHours: {} },
 ];
 const DEFAULT_THRESHOLDS = { fruehStart: "06:00", fruehEnd: "11:00", mittelStart: "10:00", mittelEnd: "16:00", spaetStart: "14:00", spaetEnd: "22:00" };
+const TYPES = ["Früh", "Mittel", "Spät"];
 const DEFAULT_MARKET_HOURS = { open: "07:00", close: "20:00", managerStart: "06:30", managerEnd: "20:30" };
 
 function classifyShift(startTime, thr) {
@@ -2070,7 +2071,6 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
 
           {(() => {
             const thr = thresholds ?? DEFAULT_THRESHOLDS;
-            const TYPES = ["Früh", "Mittel", "Spät"];
             const toMin = t => { const [h,m] = t.split(":").map(Number); return h*60+m; };
             const fmtMin = m => `${String(Math.floor(m/60)).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
             const ds = fmtISO(weekDates[tlDay]);
