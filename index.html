@@ -482,11 +482,13 @@ function defaultDelivery() {
     exceptions: [...getHessenHolidays(yr), ...getHessenHolidays(yr + 1)],
   };
 }
-// Deadline: Mittwoch 23:59 der Vorwoche — danach kein Eintragen mehr für diese Woche
-function getDeadline(weekStart) {
-  const d = addDays(weekStart, -5); d.setHours(23, 59, 59, 999); return d;
+// Deadline: standardmäßig 5 Tage vor Wochenbeginn (Mi 23:59 der Vorwoche), 23:59 Uhr — danach kein Eintragen mehr für diese Woche.
+// Admin kann den Vorlauf (Tage vor Wochenbeginn) global einstellen.
+const DEFAULT_DEADLINE_DAYS = 5;
+function getDeadline(weekStart, daysBefore = DEFAULT_DEADLINE_DAYS) {
+  const d = addDays(weekStart, -daysBefore); d.setHours(23, 59, 59, 999); return d;
 }
-const isPastDeadline = weekStart => new Date() > getDeadline(weekStart);
+const isPastDeadline = (weekStart, daysBefore = DEFAULT_DEADLINE_DAYS) => new Date() > getDeadline(weekStart, daysBefore);
 function getKW(date) {
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
   const day = d.getUTCDay() || 7; d.setUTCDate(d.getUTCDate() + 4 - day);
@@ -683,6 +685,7 @@ function App() {
     Object.fromEntries(MARKETS.map(m => [m.id, { roles: DEFAULT_ROLES.map(r => ({ ...r })), thresholds: { ...DEFAULT_THRESHOLDS } }]))
   );
   const [managerCreds, setManagerCreds] = usePersistedState("managerCreds", () => ({ ...DEFAULT_MANAGER_CREDS }));
+  const [deadlineDays, setDeadlineDays] = usePersistedState("deadlineDays", DEFAULT_DEADLINE_DAYS);
 
   useEffect(() => { try { localStorage.setItem(LS_PREFIX + "version", LS_VERSION); } catch {} }, []);
 
@@ -728,7 +731,7 @@ function App() {
   if (page === "employee") {
     const me = employees.find(e => e.id === myEmployeeId);
     return (
-      <EmployeeView {...common} me={me} marketId={marketId}
+      <EmployeeView {...common} me={me} marketId={marketId} deadlineDays={deadlineDays}
         onSave={avails => saveAvailability(myEmployeeId, avails)}
         onChangePassword={async newPw => {
           const passwordHash = await hashPw(newPw, String(myEmployeeId));
@@ -742,6 +745,7 @@ function App() {
 
   return (
     <ManagerView {...common} marketId={marketId} onMarketChange={isAdmin ? setMarketId : null} isAdmin={isAdmin}
+      deadlineDays={deadlineDays} onUpdateDeadlineDays={setDeadlineDays}
       onAddShift={s => setShifts(p => [...p, { ...s, id: uid() }])}
       onDelShift={id => setShifts(p => p.filter(s => s.id !== id))}
       onAddEmployee={async (name, pw, wh, defRoles) => {
@@ -917,7 +921,7 @@ function SetPasswordView({ name, onSave }) {
 }
 
 // ─── SIDEBAR ──────────────────────────────────────────────────────────────────
-function Sidebar({ role, marketId, isAdmin, onMarketChange, onLogout, empName, onChangePw, sbOpen, onClose, onShowDelivery, onShowScan, onShowAddEmp, onShowRoles, onResetData, onShowManagerPw }) {
+function Sidebar({ role, marketId, isAdmin, onMarketChange, onLogout, empName, onChangePw, sbOpen, onClose, onShowDelivery, onShowScan, onShowAddEmp, onShowRoles, onResetData, onShowManagerPw, onShowDeadline }) {
   const market = MARKETS.find(m => m.id === marketId);
   const action = (fn) => () => { fn?.(); onClose(); };
   return (
@@ -975,6 +979,11 @@ function Sidebar({ role, marketId, isAdmin, onMarketChange, onLogout, empName, o
               <span style={{ fontSize: 13 }}>🔑</span> Marktleitungs-Passwörter
             </div>
           )}
+          {onShowDeadline && (
+            <div className="sb-item" onClick={onShowDeadline}>
+              <span style={{ fontSize: 13 }}>⏱️</span> Eintragefrist
+            </div>
+          )}
           {onResetData && (
             <div className="sb-item" style={{ color: "#F87171" }}
               onClick={() => { if (confirm("Wirklich ALLE gespeicherten Daten löschen und auf die Demo-Daten zurücksetzen? Das kann nicht rückgängig gemacht werden.")) onResetData(); }}>
@@ -1003,7 +1012,7 @@ function WeekNav({ weekStart, weekDates, onChange }) {
 }
 
 // ─── MITARBEITER-ANSICHT ──────────────────────────────────────────────────────
-function EmployeeView({ me, marketId, availability, shifts, weekStart, weekDates, onWeekChange, onSave, onChangePassword, onLogout }) {
+function EmployeeView({ me, marketId, availability, shifts, weekStart, weekDates, onWeekChange, onSave, onChangePassword, onLogout, deadlineDays }) {
   const [sbOpen, setSbOpen] = useState(false);
   const [showPwModal, setShowPwModal] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -1041,8 +1050,8 @@ function EmployeeView({ me, marketId, availability, shifts, weekStart, weekDates
   }
 
   const market = MARKETS.find(m => m.id === marketId);
-  const locked = isPastDeadline(weekStart);
-  const deadline = getDeadline(weekStart);
+  const locked = isPastDeadline(weekStart, deadlineDays);
+  const deadline = getDeadline(weekStart, deadlineDays);
   const deadlineStr = deadline.toLocaleDateString("de-DE", { weekday: "long", day: "2-digit", month: "2-digit" });
 
   return (
@@ -1676,7 +1685,7 @@ function RolesModal({ roles, thresholds: initThresholds, marketHours: initMh, on
 }
 
 // ─── MARKTLEITUNG-ANSICHT ─────────────────────────────────────────────────────
-function ManagerView({ marketId, onMarketChange, isAdmin, employees, availability, shifts, weekStart, weekDates, onWeekChange, onAddShift, onDelShift, onAddEmployee, onDeleteEmployee, onUpdateEmployee, onImportAvailability, deliveryConfig, onUpdateDelivery, roles, thresholds, marketHours, onUpdateRoles, onUpdateMarketHours, onBulkAddShifts, onLogout, onResetData, managerCreds, onUpdateManagerCreds }) {
+function ManagerView({ marketId, onMarketChange, isAdmin, employees, availability, shifts, weekStart, weekDates, onWeekChange, onAddShift, onDelShift, onAddEmployee, onDeleteEmployee, onUpdateEmployee, onImportAvailability, deliveryConfig, onUpdateDelivery, roles, thresholds, marketHours, onUpdateRoles, onUpdateMarketHours, onBulkAddShifts, onLogout, onResetData, managerCreds, onUpdateManagerCreds, deadlineDays, onUpdateDeadlineDays }) {
   const [sbOpen, setSbOpen] = useState(false);
   const [modal, setModal] = useState(null);
   const [delEmpModal, setDelEmpModal] = useState(null);
@@ -1685,6 +1694,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
   const [showDelivery, setShowDelivery] = useState(false);
   const [showRoles, setShowRoles] = useState(false);
   const [showManagerPw, setShowManagerPw] = useState(false);
+  const [showDeadline, setShowDeadline] = useState(false);
   const [tlDay, setTlDay] = useState(() => { const d = new Date().getDay(); return d === 0 ? 6 : d - 1; });
   const [tlRole, setTlRole] = useState(null); // null = alle Abteilungen
   const [newEmpName, setNewEmpName] = useState("");
@@ -1795,6 +1805,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
         onShowAddEmp={() => setShowAddEmp(true)}
         onShowRoles={() => setShowRoles(true)}
         onShowManagerPw={isAdmin ? () => setShowManagerPw(true) : null}
+        onShowDeadline={isAdmin ? () => setShowDeadline(true) : null}
         onResetData={onResetData} />
       <div className="main">
         <div className="ph">
@@ -2452,6 +2463,35 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                   }
                   onUpdateManagerCreds(updated);
                   setShowManagerPw(false);
+                }}>Speichern</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Eintragefrist Modal (nur Admin) */}
+      {showDeadline && isAdmin && (() => {
+        const current = deadlineDays ?? DEFAULT_DEADLINE_DAYS;
+        return (
+          <div className="ov" onClick={() => setShowDeadline(false)}>
+            <div className="modal" style={{ width: "min(420px, calc(100vw - 24px))", maxHeight: "90vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
+              <div className="modal-t">⏱️ Eintragefrist</div>
+              <div className="modal-s">Wie viele Tage vor Wochenbeginn (Montag) endet die Frist für Mitarbeiter, ihre Verfügbarkeit einzutragen? Standard: {DEFAULT_DEADLINE_DAYS} Tage (Mittwoch 23:59 der Vorwoche). Gilt für alle Märkte.</div>
+              <div className="field">
+                <label>Tage vor Wochenbeginn</label>
+                <input type="number" min="0" max="21" id="deadline-days-input" defaultValue={current}
+                  style={{ fontFamily: "monospace", width: 80 }} />
+              </div>
+              <div style={{ fontSize: 12, color: "#94A3B8", marginBottom: 4 }}>
+                Aktuell: Frist endet jeweils {current} Tag{current === 1 ? "" : "e"} vor Montag, 23:59 Uhr.
+              </div>
+              <div className="macts" style={{ display: "flex", gap: 8, marginTop: 16 }}>
+                <button className="btn-cancel" style={{ flex: 1 }} onClick={() => setShowDeadline(false)}>Abbrechen</button>
+                <button className="btn-ok" style={{ flex: 2 }} onClick={() => {
+                  const val = parseInt(document.getElementById("deadline-days-input")?.value);
+                  if (!isNaN(val) && val >= 0) onUpdateDeadlineDays(val);
+                  setShowDeadline(false);
                 }}>Speichern</button>
               </div>
             </div>
