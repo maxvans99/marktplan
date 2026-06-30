@@ -445,6 +445,16 @@ const DEFAULT_THRESHOLDS = { fruehStart: "06:00", fruehEnd: "11:00", mittelStart
 const TYPES = ["Früh", "Mittel", "Spät"];
 const DEFAULT_MARKET_HOURS = { open: "07:00", close: "20:00", managerStart: "06:30", managerEnd: "20:30" };
 
+// ─── PASSWORT-HASHING (SHA-256, Web Crypto API) ──────────────────────────────
+// Client-only App ohne Backend: kein echter Schutz vor jemandem mit Code-Zugriff,
+// aber verhindert Klartext-Passwörter in localStorage/Cloud (DSGVO Art. 32).
+async function hashPw(plain, salt) {
+  const enc = new TextEncoder().encode(`${salt}:${plain}:mp-pepper-2026`);
+  const buf = await crypto.subtle.digest("SHA-256", enc);
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
+}
+function isHashed(v) { return typeof v === "string" && /^[0-9a-f]{64}$/.test(v); }
+
 function classifyShift(startTime, thr) {
   if (!startTime) return "Früh";
   const fruehEnd   = thr.fruehEnd   ?? thr.frueh ?? "11:00";
@@ -650,8 +660,9 @@ function App() {
     }
   }
 
-  function handleSetPassword(newPw) {
-    setEmployees(p => p.map(e => e.id === myEmployeeId ? { ...e, password: newPw, mustChangePw: false } : e));
+  async function handleSetPassword(newPw) {
+    const passwordHash = await hashPw(newPw, String(myEmployeeId));
+    setEmployees(p => p.map(e => e.id === myEmployeeId ? { ...e, passwordHash, password: undefined, mustChangePw: false } : e));
     setPage("employee");
   }
 
@@ -675,6 +686,33 @@ function App() {
 
   useEffect(() => { try { localStorage.setItem(LS_PREFIX + "version", LS_VERSION); } catch {} }, []);
 
+  // Einmalige Migration: alte Klartext-Passwörter (Seed-Daten, ältere Speicherstände) → SHA-256-Hash
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (employees.some(e => e.password && !e.passwordHash)) {
+        const migrated = await Promise.all(employees.map(async e => {
+          if (e.password && !e.passwordHash) {
+            const passwordHash = await hashPw(e.password, String(e.id));
+            const { password, ...rest } = e;
+            return { ...rest, passwordHash };
+          }
+          return e;
+        }));
+        if (!cancelled) setEmployees(migrated);
+      }
+      const creds = managerCreds ?? DEFAULT_MANAGER_CREDS;
+      if (Object.values(creds).some(v => !isHashed(v))) {
+        const migrated = {};
+        for (const [mId, v] of Object.entries(creds)) {
+          migrated[mId] = isHashed(v) ? v : await hashPw(v, "mgr-" + mId);
+        }
+        if (!cancelled) setManagerCreds(migrated);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   function resetAllData() {
     clearAllPersistedState();
     location.reload();
@@ -692,7 +730,10 @@ function App() {
     return (
       <EmployeeView {...common} me={me} marketId={marketId}
         onSave={avails => saveAvailability(myEmployeeId, avails)}
-        onChangePassword={newPw => setEmployees(p => p.map(e => e.id === myEmployeeId ? { ...e, password: newPw } : e))}
+        onChangePassword={async newPw => {
+          const passwordHash = await hashPw(newPw, String(myEmployeeId));
+          setEmployees(p => p.map(e => e.id === myEmployeeId ? { ...e, passwordHash, password: undefined } : e));
+        }}
       />
     );
   }
@@ -703,8 +744,18 @@ function App() {
     <ManagerView {...common} marketId={marketId} onMarketChange={isAdmin ? setMarketId : null} isAdmin={isAdmin}
       onAddShift={s => setShifts(p => [...p, { ...s, id: uid() }])}
       onDelShift={id => setShifts(p => p.filter(s => s.id !== id))}
-      onAddEmployee={(name, pw, wh, defRoles) => setEmployees(p => [...p, { id: uid(), name, marketId, password: pw, mustChangePw: true, weeklyHours: wh || null, defaultRoles: defRoles ?? [] }])}
-      onUpdateEmployee={(id, changes) => setEmployees(p => p.map(e => e.id === id ? { ...e, ...changes } : e))}
+      onAddEmployee={async (name, pw, wh, defRoles) => {
+        const id = uid();
+        const passwordHash = await hashPw(pw, String(id));
+        setEmployees(p => [...p, { id, name, marketId, passwordHash, mustChangePw: true, weeklyHours: wh || null, defaultRoles: defRoles ?? [] }]);
+      }}
+      onUpdateEmployee={async (id, changes) => {
+        if (changes.password) {
+          const passwordHash = await hashPw(changes.password, String(id));
+          changes = { ...changes, passwordHash, password: undefined };
+        }
+        setEmployees(p => p.map(e => e.id === id ? { ...e, ...changes } : e));
+      }}
       onDeleteEmployee={empId => {
         setEmployees(p => p.filter(e => e.id !== empId));
         setAvailability(p => p.filter(a => a.employeeId !== empId));
@@ -746,16 +797,19 @@ function LoginScreen({ employees, onLogin, managerCreds }) {
 
   function reset() { setPassword(""); setError(""); }
 
-  function submit() {
+  async function submit() {
     setError("");
     if (role === "admin") {
       onLogin({ role: "admin" });
     } else if (role === "manager") {
-      if ((managerCreds ?? DEFAULT_MANAGER_CREDS)[parseInt(marketId)] !== password) { setError("Falsches Passwort."); return; }
+      const stored = (managerCreds ?? DEFAULT_MANAGER_CREDS)[parseInt(marketId)];
+      const ok = isHashed(stored) ? stored === await hashPw(password, "mgr-" + marketId) : stored === password;
+      if (!ok) { setError("Falsches Passwort."); return; }
       onLogin({ role: "manager", marketId: parseInt(marketId) });
     } else {
       const emp = employees.find(e => e.id === parseInt(employeeId));
-      if (!emp || emp.password !== password) { setError("Falscher Name oder Passwort."); return; }
+      const ok = emp && (emp.passwordHash ? emp.passwordHash === await hashPw(password, String(emp.id)) : emp.password === password);
+      if (!ok) { setError("Falscher Name oder Passwort."); return; }
       onLogin({ role: "employee", marketId: parseInt(marketId), employeeId: emp.id });
     }
   }
@@ -815,8 +869,8 @@ function LoginScreen({ employees, onLogin, managerCreds }) {
 
           {error && <div className="auth-error">{error}</div>}
 
-          {role === "manager" && marketId && !error && <div className="pw-hint">Passwort: <strong>{(managerCreds ?? DEFAULT_MANAGER_CREDS)[parseInt(marketId)]}</strong></div>}
-          {role === "employee" && employeeId && !error && <div className="pw-hint">Demo-Passwort: <strong>1234</strong></div>}
+          {role === "manager" && marketId && !error && <div className="pw-hint">Standard-Passwort (Testphase): <strong>1234</strong></div>}
+          {role === "employee" && employeeId && !error && <div className="pw-hint">Standard-Passwort (Testphase): <strong>1234</strong></div>}
         </>}
 
         <button className="btn-primary" disabled={!canSubmit} onClick={submit}>Anmelden</button>
@@ -2380,22 +2434,22 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
           <div className="ov" onClick={() => setShowManagerPw(false)}>
             <div className="modal" style={{ width: "min(420px, calc(100vw - 24px))", maxHeight: "90vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
               <div className="modal-t">🔑 Marktleitungs-Passwörter</div>
-              <div className="modal-s">Passwort für den Marktleitungs-Login pro Markt (nicht der persönliche MA-Login).</div>
+              <div className="modal-s">Passwort für den Marktleitungs-Login pro Markt (nicht der persönliche MA-Login). Aus Sicherheitsgründen werden bestehende Passwörter nicht angezeigt — leer lassen, um sie unverändert zu lassen.</div>
               {MARKETS.map(m => (
                 <div key={m.id} className="field">
                   <label>{m.name}</label>
-                  <input type="text" id={`mgpw-${m.id}`} defaultValue={localCreds[m.id] ?? "1234"}
+                  <input type="text" id={`mgpw-${m.id}`} placeholder="Unverändert lassen" defaultValue=""
                     style={{ fontFamily: "monospace" }} />
                 </div>
               ))}
               <div className="macts" style={{ display: "flex", gap: 8, marginTop: 16 }}>
                 <button className="btn-cancel" style={{ flex: 1 }} onClick={() => setShowManagerPw(false)}>Abbrechen</button>
-                <button className="btn-ok" style={{ flex: 2 }} onClick={() => {
-                  const updated = {};
-                  MARKETS.forEach(m => {
+                <button className="btn-ok" style={{ flex: 2 }} onClick={async () => {
+                  const updated = { ...localCreds };
+                  for (const m of MARKETS) {
                     const val = document.getElementById(`mgpw-${m.id}`)?.value?.trim();
-                    updated[m.id] = val || localCreds[m.id];
-                  });
+                    if (val) updated[m.id] = await hashPw(val, "mgr-" + m.id);
+                  }
                   onUpdateManagerCreds(updated);
                   setShowManagerPw(false);
                 }}>Speichern</button>
