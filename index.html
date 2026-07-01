@@ -70,6 +70,7 @@
   .btn-primary:disabled { background: #CBD5E1; cursor: not-allowed; }
   .auth-error { background: #FEF2F2; border: 1px solid #FECACA; color: #DC2626; border-radius: 8px; padding: 10px 14px; font-size: 13px; margin-bottom: 14px; }
   .pw-hint { font-size: 12px; color: #94A3B8; margin-bottom: 16px; }
+  .deadline-days-input::placeholder { color: #CBD5E1; opacity: .55; }
 
   .app { display: flex; min-height: 100vh; min-height: 100svh; }
   .sidebar { width: 220px; background: #0F172A; display: flex; flex-direction: column; flex-shrink: 0; }
@@ -1686,82 +1687,149 @@ function RolesModal({ roles, thresholds: initThresholds, marketHours: initMh, on
   );
 }
 
-// ─── EINTRAGEFRIST MODAL (pro Markt, mit Mini-Kalender) ──────────────────────
+// ─── EINTRAGEFRIST MODAL (fragt zuerst nach dem Markt, dann Tage + Mini-Kalender) ─
 function DeadlineModal({ deadlineDaysByMarket, onSave, onClose }) {
-  const [days, setDays] = useState(() =>
-    Object.fromEntries(MARKETS.map(m => [m.id, deadlineDaysByMarket?.[m.id] ?? DEFAULT_DEADLINE_DAYS]))
-  );
-  const [calMarket, setCalMarket] = useState(MARKETS[0].id);
+  const [marketId, setMarketId] = useState(null);
+
+  if (!marketId) {
+    return (
+      <div className="ov" onClick={onClose}>
+        <div className="modal" style={{ width: "min(380px, calc(100vw - 24px))", maxHeight: "90vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
+          <div className="modal-t">⏱️ Eintragefrist</div>
+          <div className="modal-s">Für welchen Markt möchtest du die Frist ändern?</div>
+          {MARKETS.map(m => (
+            <div key={m.id} className="sb-item" style={{ cursor: "pointer", padding: "10px 12px", borderRadius: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}
+              onClick={() => setMarketId(m.id)}>
+              <span>{m.name}</span>
+              <span style={{ fontSize: 12, color: "#94A3B8" }}>{deadlineDaysByMarket?.[m.id] ?? DEFAULT_DEADLINE_DAYS} Tage</span>
+            </div>
+          ))}
+          <div className="macts" style={{ marginTop: 16 }}>
+            <button className="btn-cancel" style={{ flex: 1 }} onClick={onClose}>Abbrechen</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return <DeadlineMarketEditor marketId={marketId} marketName={MARKETS.find(m => m.id === marketId)?.name ?? ""}
+    deadlineDaysByMarket={deadlineDaysByMarket} onBack={() => setMarketId(null)}
+    onSave={val => onSave(marketId, val)} onClose={onClose} />;
+}
+
+function DeadlineMarketEditor({ marketId, marketName, deadlineDaysByMarket, onSave, onClose, onBack }) {
+  const initial = deadlineDaysByMarket?.[marketId];
+  const [dayValStr, setDayValStr] = useState(initial != null ? String(initial) : "");
+  const dayVal = dayValStr === "" ? DEFAULT_DEADLINE_DAYS : (parseInt(dayValStr) || 0);
+
+  // Lokale (zeitzonensichere) Datums-ID statt fmtISO/toISOString — toISOString rechnet
+  // auf UTC um und verschiebt lokale Mitternacht in der Sommerzeit auf den Vortag.
+  const localISO = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
   const now = new Date();
-  const year = now.getFullYear(), month = now.getMonth();
-  const monthLabel = now.toLocaleDateString("de-DE", { month: "long", year: "numeric" });
-  const firstOfMonth = new Date(year, month, 1);
-  const startOffset = (firstOfMonth.getDay() + 6) % 7; // Mo=0 .. So=6
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const todayStr = fmtISO(now);
+  const todayStr = localISO(now);
 
-  const currentDays = days[calMarket] ?? DEFAULT_DEADLINE_DAYS;
-  const isDeadlineDay = d => (d.getDay() + currentDays) % 7 === 1; // Tag X vor Montag
+  // Frist fällt immer auf denselben Wochentag (X Tage vor Montag) — gilt für jede Woche
+  const isDeadlineWeekday = d => (d.getDay() + dayVal) % 7 === 1;
 
-  const cells = [];
-  for (let i = 0; i < startOffset; i++) cells.push(null);
-  for (let day = 1; day <= daysInMonth; day++) cells.push(new Date(year, month, day));
+  // Hessen-Feiertage für ein gegebenes Jahr (zeitzonensicher, unabhängig von globaler fmtISO)
+  function holidaysForYear(y) {
+    const easter = getEaster(y);
+    const shift = (d, n) => { const r = new Date(d); r.setDate(r.getDate() + n); return r; };
+    return [
+      new Date(y, 0, 1), shift(easter, -2), shift(easter, 1),
+      new Date(y, 4, 1), shift(easter, 39), shift(easter, 50), shift(easter, 60),
+      new Date(y, 9, 3), new Date(y, 11, 25), new Date(y, 11, 26),
+    ].map(localISO);
+  }
+  const holidaySet = useMemo(() => {
+    const years = new Set([now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1]);
+    const all = [];
+    years.forEach(y => all.push(...holidaysForYear(y)));
+    return new Set(all);
+  }, []);
+
+  // Mehrere Monate am Stück: 1 Monat zurück bis 4 Monate voraus, nahtlos vertikal scrollbar
+  const baseMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const months = Array.from({ length: 6 }, (_, i) => {
+    const mDate = new Date(baseMonth.getFullYear(), baseMonth.getMonth() - 1 + i, 1);
+    const year = mDate.getFullYear(), month = mDate.getMonth();
+    const monthLabel = mDate.toLocaleDateString("de-DE", { month: "long", year: "numeric" });
+    const startOffset = (mDate.getDay() + 6) % 7; // Mo=0 .. So=6
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const cells = [];
+    for (let i2 = 0; i2 < startOffset; i2++) cells.push(null);
+    for (let day = 1; day <= daysInMonth; day++) cells.push(new Date(year, month, day));
+    return { key: `${year}-${month}`, monthLabel, cells };
+  });
+
+  const scrollRef = useRef(null);
+  const todayMonthKey = `${now.getFullYear()}-${now.getMonth()}`;
+  useEffect(() => {
+    const el = scrollRef.current?.querySelector(`[data-month="${todayMonthKey}"]`);
+    if (el && scrollRef.current) scrollRef.current.scrollTop = el.offsetTop - 4;
+  }, []);
 
   return (
     <div className="ov" onClick={onClose}>
-      <div className="modal" style={{ width: "min(440px, calc(100vw - 24px))", maxHeight: "90vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
-        <div className="modal-t">⏱️ Eintragefrist</div>
-        <div className="modal-s">Wie viele Tage vor Wochenbeginn (Montag) endet die Frist für Mitarbeiter, ihre Verfügbarkeit einzutragen? Pro Markt einstellbar. Standard: {DEFAULT_DEADLINE_DAYS} Tage (Mittwoch 23:59 der Vorwoche).</div>
+      <div className="modal" style={{ width: "min(420px, calc(100vw - 24px))", maxHeight: "90vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
+        <div style={{ fontSize: 12, color: "#3B82F6", cursor: "pointer", marginBottom: 6 }} onClick={onBack}>← anderer Markt</div>
+        <div className="modal-t">⏱️ Eintragefrist — {marketName}</div>
+        <div className="modal-s">Wie viele Tage vor Wochenbeginn (Montag) endet die Frist für Mitarbeiter dieses Markts, ihre Verfügbarkeit einzutragen? Standard: {DEFAULT_DEADLINE_DAYS} Tage (Mittwoch 23:59 der Vorwoche).</div>
 
-        {MARKETS.map(m => (
-          <div key={m.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "6px 0", borderBottom: "1px solid #F1F5F9" }}>
-            <span style={{ fontSize: 13, fontWeight: 600, color: "#1E293B", cursor: "pointer", textDecoration: calMarket === m.id ? "underline" : "none" }}
-              onClick={() => setCalMarket(m.id)}>{m.name}</span>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <input type="number" min="0" max="21" value={days[m.id] ?? DEFAULT_DEADLINE_DAYS}
-                onChange={e => { const n = parseInt(e.target.value); setDays(p => ({ ...p, [m.id]: isNaN(n) || n < 0 ? 0 : n })); setCalMarket(m.id); }}
-                style={{ width: 56, padding: "4px 6px", border: "1.5px solid #E2E8F0", borderRadius: 6, fontSize: 12, fontWeight: 700, textAlign: "center", outline: "none" }} />
-              <span style={{ fontSize: 11, color: "#94A3B8" }}>Tage</span>
-            </div>
-          </div>
-        ))}
+        <div className="field">
+          <label>Tage vor Wochenbeginn</label>
+          <input type="number" min="0" max="21" value={dayValStr} placeholder={String(DEFAULT_DEADLINE_DAYS)} className="deadline-days-input"
+            onChange={e => setDayValStr(e.target.value)}
+            style={{ width: 80, fontFamily: "monospace" }} />
+        </div>
 
-        {/* Mini-Kalender: zeigt die Fristtage des gewählten Markts im aktuellen Monat */}
-        <div style={{ marginTop: 14, background: "#F8FAFC", borderRadius: 10, padding: "12px 14px" }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", marginBottom: 8, textTransform: "capitalize" }}>
-            {monthLabel} — Fristtage für {MARKETS.find(m => m.id === calMarket)?.name}
-          </div>
+        {/* Kalender: nahtlos vertikal scrollbar über mehrere Monate, zeigt Fristtage + Feiertage */}
+        <div style={{ marginTop: 8, background: "#F8FAFC", borderRadius: 10, padding: "12px 14px" }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase", marginBottom: 6 }}>Hoch-/Runterscrollen für andere Monate</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 3, marginBottom: 4 }}>
             {["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"].map(d => (
               <span key={d} style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", textAlign: "center" }}>{d}</span>
             ))}
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 3 }}>
-            {cells.map((d, i) => {
-              if (!d) return <span key={i} />;
-              const isToday = fmtISO(d) === todayStr;
-              const isDeadline = isDeadlineDay(d);
-              return (
-                <div key={i} style={{
-                  aspectRatio: "1", display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: 11, fontWeight: isDeadline ? 800 : 500, borderRadius: 6,
-                  background: isDeadline ? "#FEE2E2" : "transparent",
-                  color: isDeadline ? "#DC2626" : "#1E293B",
-                  border: isToday ? "1.5px solid #3B82F6" : "1.5px solid transparent",
-                }}>{d.getDate()}</div>
-              );
-            })}
+          <div ref={scrollRef} style={{ maxHeight: 260, overflowY: "auto" }}>
+            {months.map(({ key, monthLabel, cells }) => (
+              <div key={key} data-month={key} style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", textTransform: "capitalize", margin: "6px 0 4px" }}>{monthLabel}</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 3 }}>
+                  {cells.map((d, i) => {
+                    if (!d) return <span key={i} />;
+                    const dStr = localISO(d);
+                    const isToday = dStr === todayStr;
+                    const isDeadlineDay = isDeadlineWeekday(d);
+                    const isHoliday = holidaySet.has(dStr);
+                    return (
+                      <div key={i} title={isHoliday ? "Feiertag" : undefined} style={{
+                        position: "relative", aspectRatio: "1", display: "flex", alignItems: "center", justifyContent: "center",
+                        fontSize: 11, fontWeight: isDeadlineDay ? 800 : 500, borderRadius: 6,
+                        background: isDeadlineDay ? "#FEE2E2" : "transparent",
+                        color: isDeadlineDay ? "#DC2626" : isHoliday ? "#059669" : "#1E293B",
+                        border: isToday ? "1.5px solid #3B82F6" : "1.5px solid transparent",
+                      }}>
+                        {d.getDate()}
+                        {isHoliday && <span style={{ position: "absolute", bottom: 1, width: 4, height: 4, borderRadius: "50%", background: "#059669" }} />}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
-          <div style={{ display: "flex", gap: 14, marginTop: 8, fontSize: 11, color: "#64748B" }}>
+          <div style={{ display: "flex", gap: 14, marginTop: 8, fontSize: 11, color: "#64748B", flexWrap: "wrap" }}>
             <span><span style={{ display: "inline-block", width: 9, height: 9, borderRadius: 3, background: "#FEE2E2", border: "1px solid #FCA5A5", marginRight: 4, verticalAlign: "middle" }} />Fristtag, 23:59 Uhr</span>
             <span><span style={{ display: "inline-block", width: 9, height: 9, borderRadius: 3, border: "1.5px solid #3B82F6", marginRight: 4, verticalAlign: "middle" }} />Heute</span>
+            <span><span style={{ display: "inline-block", width: 9, height: 9, borderRadius: "50%", background: "#059669", marginRight: 4, verticalAlign: "middle" }} />Feiertag (Hessen)</span>
           </div>
         </div>
 
         <div className="macts" style={{ marginTop: 16 }}>
           <button className="btn-cancel" onClick={onClose}>Abbrechen</button>
-          <button className="btn-ok" onClick={() => { onSave(days); onClose(); }}>Speichern</button>
+          <button className="btn-ok" onClick={() => { onSave(dayVal); onClose(); }}>Speichern</button>
         </div>
       </div>
     </div>
@@ -2554,10 +2622,10 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
         );
       })()}
 
-      {/* Eintragefrist Modal (nur Admin, pro Markt) */}
+      {/* Eintragefrist Modal (nur Admin) — fragt zuerst nach dem Markt */}
       {showDeadline && isAdmin && (
         <DeadlineModal deadlineDaysByMarket={deadlineDaysByMarket ?? {}}
-          onSave={updated => onUpdateDeadlineDaysByMarket(updated)}
+          onSave={(mId, val) => onUpdateDeadlineDaysByMarket(prev => ({ ...(prev ?? {}), [mId]: val }))}
           onClose={() => setShowDeadline(false)} />
       )}
 
