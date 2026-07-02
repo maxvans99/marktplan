@@ -346,7 +346,9 @@ const firebaseConfig = {
   appId: "1:85624571703:web:4282281fc72386c628bcb2"
 };
 
-const IS_LOCAL = location.protocol === "file:" || /^(localhost|127\.)/.test(location.hostname);
+// Lokal = file://, localhost oder privates Netzwerk (Handy-Test über LAN-IP)
+const IS_LOCAL = location.protocol === "file:"
+  || /^(localhost|127\.|192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(location.hostname);
 
 // ─── LIZENZ-SCHUTZ ───────────────────────────────────────────────────────────
 // Diese Software ist urheberrechtlich geschützt. © 2026 Max Vans. Alle Rechte vorbehalten.
@@ -368,7 +370,7 @@ if (CLOUD_ENABLED) {
 // ─── PERSISTENZ (localStorage) ───────────────────────────────────────────────
 const LS_PREFIX  = "marktplan:";
 const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
-const APP_BUILD  = "20260702-4"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
+const APP_BUILD  = "20260702-5"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
 
 function clearAllPersistedState() {
   try {
@@ -383,7 +385,7 @@ function clearAllPersistedState() {
     if (localStorage.getItem(LS_PREFIX + "build") !== APP_BUILD) {
       clearAllPersistedState();
       localStorage.setItem(LS_PREFIX + "build", APP_BUILD);
-      location.reload(true);
+      location.reload();
     }
   } catch {}
 })();
@@ -414,6 +416,10 @@ function loadLS(key, fallback) {
 function usePersistedState(key, initial) {
   const [val, setVal] = useState(() => loadLS(key, initial));
   const skipWrite = useRef(false);
+  // Cloud-Schreibschutz: erst schreiben, nachdem der erste Snapshot da war.
+  // Sonst überschreibt ein frisch geladener Client (z.B. nach Build-Reset mit
+  // leerem localStorage) die kompletten Cloud-Daten mit seinem leeren Zustand.
+  const cloudReady = useRef(!CLOUD_ENABLED);
 
   // Cloud-Sync: live abonnieren
   useEffect(() => {
@@ -424,21 +430,23 @@ function usePersistedState(key, initial) {
         const remote = snap.data().data;
         skipWrite.current = true;
         bumpIdFrom(remote);
+        cloudReady.current = true;
         setVal(remote);
         try { localStorage.setItem(LS_PREFIX + key, JSON.stringify(remote)); } catch {}
       } else {
         // Dokument fehlt → mit aktuellem lokalen Wert anlegen
+        cloudReady.current = true;
         setVal(cur => { ref.set({ data: cur }).catch(() => {}); return cur; });
       }
     }, err => console.warn("Snapshot", key, err));
     return unsub;
   }, [key]);
 
-  // Schreiben (localStorage immer, Cloud wenn aktiv)
+  // Schreiben (localStorage immer, Cloud erst nach erstem Snapshot)
   useEffect(() => {
     if (skipWrite.current) { skipWrite.current = false; return; }
     try { localStorage.setItem(LS_PREFIX + key, JSON.stringify(val)); } catch {}
-    if (CLOUD_ENABLED) {
+    if (CLOUD_ENABLED && cloudReady.current) {
       try { db.collection("marktplan").doc(key).set({ data: val }).catch(() => {}); } catch {}
     }
   }, [key, val]);
@@ -464,7 +472,9 @@ function getMonday(d) {
   date.setDate(date.getDate() - day + 1); date.setHours(0,0,0,0); return date;
 }
 const addDays = (d, n) => { const r = new Date(d); r.setDate(r.getDate() + n); return r; };
-const fmtISO = d => d.toISOString().split("T")[0];
+// Lokales Datum, NICHT toISOString(): das rechnet nach UTC um und macht aus
+// deutscher Mitternacht den Vortag (falsche "Heute"-Spalte, versetzte Einträge).
+const fmtISO = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const fmtShort = d => d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
 const isToday = d => fmtISO(d) === fmtISO(new Date());
 
