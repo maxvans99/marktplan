@@ -11,6 +11,9 @@
   <meta name="apple-mobile-web-app-title" content="MarktPlan" />
   <meta name="mobile-web-app-capable" content="yes" />
   <title>MarktPlan</title>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📋</text></svg>" />
   <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%230F172A'/><text y='.85em' font-size='70' x='15'>📋</text></svg>" />
   <style>
@@ -321,6 +324,27 @@
 let _id = 400;
 const uid = () => ++_id;
 
+// ─── FIREBASE ────────────────────────────────────────────────────────────────
+const firebaseConfig = {
+  apiKey: "AIzaSyDszXWDqzquKJoF4pAN2dexqyv4aY4gTGQ",
+  authDomain: "marktplan-winkler.firebaseapp.com",
+  projectId: "marktplan-winkler",
+  storageBucket: "marktplan-winkler.firebasestorage.app",
+  messagingSenderId: "85624571703",
+  appId: "1:85624571703:web:4282281fc72386c628bcb2"
+};
+
+const IS_LOCAL = location.protocol === "file:" || /^(localhost|127\.)/.test(location.hostname);
+const CLOUD_ENABLED = (!IS_LOCAL || new URLSearchParams(location.search).has("cloud"))
+  && !!firebaseConfig.apiKey;
+
+let db = null;
+if (CLOUD_ENABLED) {
+  firebase.initializeApp(firebaseConfig);
+  db = firebase.firestore();
+  firebase.auth().signInAnonymously().catch(e => console.warn("Auth:", e));
+}
+
 // ─── PERSISTENZ (localStorage) ───────────────────────────────────────────────
 const LS_PREFIX  = "marktplan:";
 const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
@@ -369,9 +393,36 @@ function loadLS(key, fallback) {
 
 function usePersistedState(key, initial) {
   const [val, setVal] = useState(() => loadLS(key, initial));
+  const skipWrite = useRef(false);
+
+  // Cloud-Sync: live abonnieren
   useEffect(() => {
+    if (!CLOUD_ENABLED) return;
+    const ref = db.collection("marktplan").doc(key);
+    const unsub = ref.onSnapshot(snap => {
+      if (snap.exists) {
+        const remote = snap.data().data;
+        skipWrite.current = true;
+        bumpIdFrom(remote);
+        setVal(remote);
+        try { localStorage.setItem(LS_PREFIX + key, JSON.stringify(remote)); } catch {}
+      } else {
+        // Dokument fehlt → mit aktuellem lokalen Wert anlegen
+        setVal(cur => { ref.set({ data: cur }).catch(() => {}); return cur; });
+      }
+    }, err => console.warn("Snapshot", key, err));
+    return unsub;
+  }, [key]);
+
+  // Schreiben (localStorage immer, Cloud wenn aktiv)
+  useEffect(() => {
+    if (skipWrite.current) { skipWrite.current = false; return; }
     try { localStorage.setItem(LS_PREFIX + key, JSON.stringify(val)); } catch {}
+    if (CLOUD_ENABLED) {
+      db.collection("marktplan").doc(key).set({ data: val }).catch(() => {});
+    }
   }, [key, val]);
+
   return [val, setVal];
 }
 
@@ -924,6 +975,26 @@ function SetPasswordView({ name, onSave }) {
 }
 
 // ─── SIDEBAR ──────────────────────────────────────────────────────────────────
+function CloudBadge() {
+  const [online, setOnline] = React.useState(navigator.onLine);
+  const [authed, setAuthed] = React.useState(false);
+  React.useEffect(() => {
+    const on = () => setOnline(true);
+    const off = () => setOnline(false);
+    window.addEventListener("online", on);
+    window.addEventListener("offline", off);
+    const unsub = firebase.auth().onAuthStateChanged(u => setAuthed(!!u));
+    return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); unsub(); };
+  }, []);
+  const connected = online && authed;
+  return (
+    <div style={{ marginTop: 8, fontSize: 11, color: connected ? "#4ADE80" : "#FCD34D", display: "flex", alignItems: "center", gap: 5 }}>
+      <span style={{ fontSize: 8 }}>{connected ? "●" : "●"}</span>
+      {connected ? "Cloud verbunden" : "Offline (lokal)"}
+    </div>
+  );
+}
+
 function Sidebar({ role, marketId, isAdmin, onMarketChange, onLogout, empName, onChangePw, sbOpen, onClose, onShowDelivery, onShowScan, onShowAddEmp, onShowRoles, onResetData, onShowManagerPw, onShowDeadline }) {
   const market = MARKETS.find(m => m.id === marketId);
   const action = (fn) => () => { fn?.(); onClose(); };
@@ -997,6 +1068,7 @@ function Sidebar({ role, marketId, isAdmin, onMarketChange, onLogout, empName, o
       </div>
       <div className="sb-footer">
         <div className="sb-logout" onClick={onLogout}>← Abmelden</div>
+        {CLOUD_ENABLED && <CloudBadge />}
       </div>
     </div>
   );
