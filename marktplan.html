@@ -370,7 +370,7 @@ if (CLOUD_ENABLED) {
 // ─── PERSISTENZ (localStorage) ───────────────────────────────────────────────
 const LS_PREFIX  = "marktplan:";
 const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
-const APP_BUILD  = "20260702-6"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
+const APP_BUILD  = "20260702-7"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
 
 function clearAllPersistedState() {
   try {
@@ -730,6 +730,31 @@ function App() {
     })();
     return () => { cancelled = true; };
   }, []);
+
+  // Migration: Feiertags-Ausnahmen, die vor dem Zeitzonen-Fix erzeugt wurden,
+  // liegen einen Tag zu früh (bewegliche Feiertage über UTC berechnet).
+  // Korrigiert bekannte Feiertagsnamen automatisch auf das richtige Datum.
+  useEffect(() => {
+    const years = [new Date().getFullYear() - 1, new Date().getFullYear(), new Date().getFullYear() + 1];
+    const correct = {}; // "Karfreitag:2026" → "2026-04-03"
+    years.forEach(y => getHessenHolidays(y).forEach(h => { correct[`${h.note}:${h.date.slice(0, 4)}`] = h.date; }));
+    let changed = false;
+    const fixed = Object.fromEntries(Object.entries(deliveryConfig).map(([mId, cfg]) => {
+      if (!cfg?.exceptions) return [mId, cfg];
+      const seen = new Set();
+      const ex = cfg.exceptions.map(e => {
+        const right = correct[`${e.note}:${e.date?.slice(0, 4)}`];
+        if (right && e.date !== right) { changed = true; return { ...e, date: right }; }
+        return e;
+      }).filter(e => { // Duplikate (gleicher Feiertag doppelt) entfernen
+        const k = `${e.note}:${e.date}`;
+        if (e.note && correct[`${e.note}:${e.date?.slice(0, 4)}`] && seen.has(k)) { changed = true; return false; }
+        seen.add(k); return true;
+      });
+      return [mId, { ...cfg, exceptions: ex }];
+    }));
+    if (changed) setDeliveryConfig(fixed);
+  }, [deliveryConfig]);
 
   // Tägliches Cloud-Backup: pro Wochentag ein Sicherungs-Dokument (rollierend 7 Tage).
   // Läuft beim ersten Gerät des Tages; überschreibt das Backup desselben Wochentags von letzter Woche.
