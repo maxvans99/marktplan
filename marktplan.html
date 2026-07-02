@@ -1,4 +1,16 @@
 ﻿<!DOCTYPE html>
+<!--
+  MarktPlan — Schichtplanungs-Software
+  © 2026 Max Vans. Alle Rechte vorbehalten. / All rights reserved.
+
+  Diese Software ist urheberrechtlich geschützt (§ 69a ff. UrhG).
+  Vervielfältigung, Verbreitung, öffentliche Zugänglichmachung oder
+  Bearbeitung — auch auszugsweise — nur mit schriftlicher Genehmigung.
+  Lizenzanfragen: maxvans99@gmail.com
+
+  Das Edeka-Winkler-Logo ist Eigentum der E-Märkte Winkler KG und wird
+  mit deren Genehmigung ausschließlich für diese Installation verwendet.
+-->
 <html lang="de">
 <head>
   <meta charset="UTF-8" />
@@ -335,8 +347,16 @@ const firebaseConfig = {
 };
 
 const IS_LOCAL = location.protocol === "file:" || /^(localhost|127\.)/.test(location.hostname);
+
+// ─── LIZENZ-SCHUTZ ───────────────────────────────────────────────────────────
+// Diese Software ist urheberrechtlich geschützt. © 2026 Max Vans. Alle Rechte vorbehalten.
+// Nutzung nur auf lizenzierten Domains. Unbefugtes Kopieren, Hosten oder
+// Weiterverbreiten ist untersagt (§ 69c UrhG).
+const LICENSED_HOSTS = ["maxvans99.github.io"];
+const IS_LICENSED = IS_LOCAL || LICENSED_HOSTS.includes(location.hostname);
+
 const CLOUD_ENABLED = (!IS_LOCAL || new URLSearchParams(location.search).has("cloud"))
-  && !!firebaseConfig.apiKey;
+  && !!firebaseConfig.apiKey && IS_LICENSED;
 
 let db = null;
 if (CLOUD_ENABLED) {
@@ -567,7 +587,25 @@ function mkKW28Shifts() { return []; }
 // ─── CSS ─────────────────────────────────────────────────────────────────────
 
 // ─── APP ─────────────────────────────────────────────────────────────────────
+function LicenseBlock() {
+  return (
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#0F172A", padding: 24 }}>
+      <div style={{ maxWidth: 420, background: "#fff", borderRadius: 16, padding: "36px 32px", textAlign: "center", boxShadow: "0 8px 40px rgba(0,0,0,.4)" }}>
+        <div style={{ fontSize: 40, marginBottom: 12 }}>🔒</div>
+        <div style={{ fontSize: 20, fontWeight: 800, color: "#0F172A", marginBottom: 10 }}>Nicht lizenzierte Kopie</div>
+        <div style={{ fontSize: 14, color: "#64748B", lineHeight: 1.6 }}>
+          Diese Installation von <b>MarktPlan</b> läuft auf einer nicht autorisierten Domain.<br /><br />
+          MarktPlan ist urheberrechtlich geschützte Software (© 2026, alle Rechte vorbehalten).
+          Für eine Lizenz wenden Sie sich an:<br />
+          <a href="mailto:maxvans99@gmail.com" style={{ color: "#3B82F6", fontWeight: 600 }}>maxvans99@gmail.com</a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function App() {
+  if (!IS_LICENSED) return <LicenseBlock />;
   const [page, setPage] = useState("login"); // login | employee | manager | setPassword
   const [marketId, setMarketId] = useState(null);
   const [myEmployeeId, setMyEmployeeId] = useState(null);
