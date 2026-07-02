@@ -625,6 +625,19 @@ function App() {
 
   useEffect(() => { try { localStorage.setItem(LS_PREFIX + "version", LS_VERSION); } catch {} }, []);
 
+  // DSGVO: Schicht- und Verfügbarkeitsdaten älter als 6 Monate automatisch löschen
+  useEffect(() => {
+    const cutoff = new Date();
+    cutoff.setMonth(cutoff.getMonth() - 6);
+    const cutoffISO = fmtISO(cutoff);
+    const pruneOld = (list, setter) => {
+      const filtered = list.filter(e => (e.date || "") >= cutoffISO);
+      if (filtered.length !== list.length) setter(filtered);
+    };
+    pruneOld(shifts, setShifts);
+    pruneOld(availability, setAvailability);
+  }, []);
+
   // Einmalige Migration: alte Klartext-Passwörter (Seed-Daten, ältere Speicherstände) → SHA-256-Hash
   useEffect(() => {
     let cancelled = false;
@@ -914,8 +927,8 @@ function Sidebar({ role, marketId, isAdmin, onMarketChange, onLogout, empName, o
           <div className="sb-item" onClick={action(onShowDelivery)}>
             <span style={{ fontSize: 13 }}>🚚</span> Liefertage
           </div>
-          <div className="sb-item" onClick={action(onShowScan)}>
-            <span style={{ fontSize: 13 }}>📷</span> Zettel scannen
+          <div className="sb-item" style={{ opacity: 0.4, cursor: "not-allowed" }} title="Vorübergehend deaktiviert">
+            <span style={{ fontSize: 13 }}>📷</span> Zettel scannen <span style={{ fontSize: 11, color: "#94A3B8" }}>(deaktiviert)</span>
           </div>
           <div className="sb-item" onClick={action(onShowAddEmp)}>
             <span style={{ fontSize: 13 }}>➕</span> Mitarbeiter anlegen
