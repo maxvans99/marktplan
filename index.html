@@ -348,7 +348,7 @@ if (CLOUD_ENABLED) {
 // ─── PERSISTENZ (localStorage) ───────────────────────────────────────────────
 const LS_PREFIX  = "marktplan:";
 const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
-const APP_BUILD  = "20260702-1"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
+const APP_BUILD  = "20260702-2"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
 
 function clearAllPersistedState() {
   try {
@@ -549,44 +549,7 @@ function getKW(date) {
 }
 
 // ─── SEED-DATEN ──────────────────────────────────────────────────────────────
-const SEED_EMP = [
-  // Griesheim – Vollzeit
-  { id:  1, name: "Anna Müller",        marketId: 1, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["Marktleiter"], isMarktleiter: true },
-  { id:  2, name: "Ben Schmidt",        marketId: 1, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["TS", "GT"], isSchliessKraft: true },
-  { id:  3, name: "Clara König",        marketId: 1, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["Frische"] },
-  { id:  7, name: "Greta Hoffmann",     marketId: 1, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["Marktleiter"], isMarktleiter: true },
-  { id:  8, name: "Hans Keller",        marketId: 1, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["GT"], isSchliessKraft: true },
-  // Weiterstadt – Vollzeit
-  { id:  4, name: "David Braun",        marketId: 2, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["Marktleiter"], isMarktleiter: true },
-  { id:  5, name: "Eva Fischer",        marketId: 2, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["Frische"] },
-  { id:  6, name: "Frank Weber",        marketId: 2, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["TS", "GT"], isSchliessKraft: true },
-  { id:  9, name: "Iris Lange",         marketId: 2, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["Kasse"], isSchliessKraft: true },
-  { id: 10, name: "Jonas Maier",        marketId: 2, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["GT", "Kasse"] },
-  // Wolfskehlen – Vollzeit
-  { id: 11, name: "Karla Neumann",      marketId: 3, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["Marktleiter"], isMarktleiter: true },
-  { id: 12, name: "Lukas Peters",       marketId: 3, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["TS", "GT"], isSchliessKraft: true },
-  { id: 13, name: "Marie Richter",      marketId: 3, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["Frische"] },
-  { id: 14, name: "Niklas Schulz",      marketId: 3, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["GT", "Kasse"], isSchliessKraft: true },
-  // Alsbach – Vollzeit
-  { id: 15, name: "Olivia Thomas",      marketId: 4, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["Marktleiter"], isMarktleiter: true },
-  { id: 16, name: "Peter Ulrich",       marketId: 4, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["GT", "TS"], isSchliessKraft: true },
-  { id: 17, name: "Quintin Voigt",      marketId: 4, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["TS"] },
-  { id: 18, name: "Rosa Wagner",        marketId: 4, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["Frische"], isSchliessKraft: true },
-  // Kleingerau – Vollzeit
-  { id: 19, name: "Stefan Zimmermann",  marketId: 5, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["Marktleiter"], isMarktleiter: true },
-  { id: 20, name: "Tanja Bauer",        marketId: 5, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["Frische"] },
-  { id: 21, name: "Udo Hartmann",       marketId: 5, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["TS", "GT"], isSchliessKraft: true },
-  { id: 22, name: "Vera Klein",         marketId: 5, password: "1234", mustChangePw: false, weeklyHours: 40, defaultRoles: ["GT"], isSchliessKraft: true },
-  // Griesheim – Teilzeit (80h/Monat ≈ 20h/Woche)
-  { id: 23, name: "Lisa Engel",         marketId: 1, password: "1234", mustChangePw: false, weeklyHours: 20, defaultRoles: ["Kasse"] },
-  { id: 24, name: "Marco Pfeiffer",     marketId: 1, password: "1234", mustChangePw: false, weeklyHours: 20, defaultRoles: ["TS", "Kasse"] },   // flexibel
-  { id: 25, name: "Sabine Roth",        marketId: 1, password: "1234", mustChangePw: false, weeklyHours: 20, defaultRoles: ["TS"] },
-  // Griesheim – Aushilfen (40h/Monat ≈ 10h/Woche)
-  { id: 26, name: "Tim Baumann",        marketId: 1, password: "1234", mustChangePw: false, weeklyHours: 10, defaultRoles: ["Kasse", "TS"] },   // flexibel
-  { id: 27, name: "Julia Sommer",       marketId: 1, password: "1234", mustChangePw: false, weeklyHours: 10, defaultRoles: ["Kasse"] },
-  { id: 28, name: "Kai Berger",         marketId: 1, password: "1234", mustChangePw: false, weeklyHours: 10, defaultRoles: ["GT"] },
-  { id: 29, name: "Lena Krause",        marketId: 1, password: "1234", mustChangePw: false, weeklyHours: 10, defaultRoles: ["Frische"] },       // nur Frische
-];
+const SEED_EMP = [];
 
 // ArbZG: ab 6h Arbeit 30min Pause, ab 9h 45min
 function calcBreakMin(startTime, endTime) {
@@ -596,91 +559,10 @@ function calcBreakMin(startTime, endTime) {
   return h >= 9 ? 45 : h >= 6 ? 30 : 0;
 }
 
-function mkSeedAvail() {
-  const mon = getMonday(new Date());
-  return [
-    // Griesheim (mkt 1)
-    [1,0,"07:00","15:30"],[1,1,"07:00","15:30"],[1,3,"07:00","15:30"],[1,4,"07:00","15:30"],
-    [2,0,"10:00","18:30"],[2,2,"10:00","18:30"],[2,4,"10:00","18:30"],[2,5,"08:00","13:00"],
-    [3,1,"06:00","14:30"],[3,2,"06:00","14:30"],[3,3,"06:00","14:30"],[3,5,"08:00","12:00"],
-    [7,0,"12:00","20:00"],[7,2,"12:00","20:00"],[7,4,"12:00","20:00"],
-    [8,1,"07:00","15:30"],[8,3,"07:00","15:30"],[8,4,"07:00","15:30"],
-    // Weiterstadt (mkt 2)
-    [4,0,"08:00","16:30"],[4,1,"08:00","16:30"],[4,2,"08:00","16:30"],
-    [5,0,"13:00","20:00"],[5,3,"13:00","20:00"],[5,4,"13:00","20:00"],
-    [6,1,"07:00","15:30"],[6,2,"07:00","15:30"],[6,4,"07:00","15:30"],
-    [9,0,"09:00","17:30"],[9,2,"09:00","17:30"],[9,4,"09:00","17:30"],
-    [10,1,"13:00","20:00"],[10,3,"13:00","20:00"],[10,5,"08:00","14:00"],
-    // Wolfskehlen (mkt 3)
-    [11,0,"07:00","15:30"],[11,1,"07:00","15:30"],[11,3,"07:00","15:30"],
-    [12,1,"10:00","18:30"],[12,2,"10:00","18:30"],[12,4,"10:00","18:30"],
-    [13,0,"13:00","20:00"],[13,2,"13:00","20:00"],[13,4,"13:00","20:00"],
-    [14,3,"07:00","15:30"],[14,4,"07:00","15:30"],[14,5,"08:00","13:00"],
-    // Alsbach (mkt 4)
-    [15,0,"07:00","15:30"],[15,2,"07:00","15:30"],[15,4,"07:00","15:30"],
-    [16,1,"09:00","17:30"],[16,3,"09:00","17:30"],[16,5,"08:00","14:00"],
-    [17,0,"13:00","20:00"],[17,2,"13:00","20:00"],[17,4,"13:00","20:00"],
-    [18,1,"07:00","15:30"],[18,2,"07:00","15:30"],[18,4,"07:00","15:30"],
-    // Kleingerau (mkt 5)
-    [19,0,"07:00","15:30"],[19,1,"07:00","15:30"],[19,3,"07:00","15:30"],
-    [20,2,"10:00","18:30"],[20,4,"10:00","18:30"],[20,5,"08:00","13:00"],
-    [21,0,"13:00","20:00"],[21,2,"13:00","20:00"],[21,4,"13:00","20:00"],
-    [22,1,"07:00","15:30"],[22,3,"07:00","15:30"],[22,5,"08:00","14:00"],
-    // Griesheim Teilzeit (20h/Woche, 2-3 Tage)
-    [23,0,"09:00","14:00"],[23,2,"09:00","14:00"],[23,4,"09:00","14:00"],
-    [24,1,"13:00","18:00"],[24,3,"13:00","18:00"],[24,5,"10:00","15:00"],
-    [25,0,"07:00","12:00"],[25,2,"07:00","12:00"],[25,4,"07:00","12:00"],
-    // Griesheim Aushilfen (10h/Woche, 1-2 Tage)
-    [26,5,"10:00","15:00"],[26,6,"10:00","15:00"],
-    [27,3,"15:00","20:00"],[27,5,"15:00","20:00"],
-    [28,0,"16:00","20:00"],[28,6,"12:00","17:00"],
-    [29,2,"14:00","19:00"],[29,5,"14:00","19:00"],
-  ].map(([empId, day, s, e]) => ({
-    id: uid(), employeeId: empId, date: fmtISO(addDays(mon, day)), startTime: s, endTime: e,
-  }));
-}
+function mkSeedAvail() { return []; }
 
-// KW 28 2026: Mo 6. Juli – So 12. Juli
-const KW28_MON = new Date(2026, 6, 6);
-function mkKW28Avail() {
-  // Griesheim-Vollzeit: alle 5 Tage verfügbar
-  // Teilzeit: 3 Tage, Aushilfen: 1-2 Tage (Sa/So bevorzugt)
-  return [
-    [1, 0,"07:00","15:30"],[1,1,"07:00","15:30"],[1,2,"07:00","15:30"],[1,3,"07:00","15:30"],[1,4,"07:00","15:30"],
-    [2, 0,"10:00","18:30"],[2,1,"10:00","18:30"],[2,2,"10:00","18:30"],[2,3,"10:00","18:30"],[2,4,"10:00","18:30"],[2,5,"08:00","13:00"],
-    [3, 0,"06:00","14:30"],[3,1,"06:00","14:30"],[3,2,"06:00","14:30"],[3,3,"06:00","14:30"],[3,5,"08:00","12:00"],
-    [7, 0,"12:00","20:00"],[7,1,"12:00","20:00"],[7,2,"12:00","20:00"],[7,4,"12:00","20:00"],
-    [8, 1,"07:00","15:30"],[8,2,"07:00","15:30"],[8,3,"07:00","15:30"],[8,4,"07:00","15:30"],
-    // Teilzeit
-    [23,0,"09:00","14:00"],[23,2,"09:00","14:00"],[23,4,"09:00","14:00"],
-    [24,1,"13:00","18:00"],[24,3,"13:00","18:00"],[24,5,"10:00","15:00"],
-    [25,0,"07:00","12:00"],[25,2,"07:00","12:00"],[25,4,"07:00","12:00"],
-    // Aushilfen
-    [26,5,"10:00","15:00"],[26,6,"10:00","15:00"],
-    [27,3,"15:00","20:00"],[27,5,"15:00","20:00"],
-    [28,0,"16:00","20:00"],[28,6,"12:00","17:00"],
-    [29,2,"14:00","19:00"],[29,5,"14:00","19:00"],
-  ].map(([empId, day, s, e]) => ({
-    id: uid(), employeeId: empId, date: fmtISO(addDays(KW28_MON, day)), startTime: s, endTime: e,
-  }));
-}
-
-// Ein paar manuell vorgeplante Schichten für KW 28 (damit Auto-Plan Lücken füllen kann)
-function mkKW28Shifts() {
-  // Mo: Anna + Ben bereits eingeplant; Di: Clara + Hans; Mi: Greta
-  return [
-    { empId:1, day:0, s:"07:00", e:"15:30" }, // Anna Mo
-    { empId:2, day:0, s:"10:00", e:"18:30" }, // Ben Mo
-    { empId:3, day:1, s:"06:00", e:"14:30" }, // Clara Di
-    { empId:8, day:1, s:"07:00", e:"15:30" }, // Hans Di
-    { empId:7, day:2, s:"12:00", e:"20:00" }, // Greta Mi
-    { empId:1, day:3, s:"07:00", e:"15:30" }, // Anna Do
-  ].map(({ empId, day, s, e }) => ({
-    id: uid(), employeeId: empId,
-    date: fmtISO(addDays(KW28_MON, day)),
-    startTime: s, endTime: e, roles: ["Kasse"],
-  }));
-}
+function mkKW28Avail() { return []; }
+function mkKW28Shifts() { return []; }
 
 // ─── CSS ─────────────────────────────────────────────────────────────────────
 
