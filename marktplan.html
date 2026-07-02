@@ -620,7 +620,7 @@ function App() {
   );
   const [managerCreds, setManagerCreds] = usePersistedState("managerCreds", () => ({ ...DEFAULT_MANAGER_CREDS }));
   const [adminPwHash, setAdminPwHash] = usePersistedState("adminPwHash", null);
-  useEffect(() => { if (!adminPwHash) hashPw("Max14Sep", "admin").then(h => setAdminPwHash(h)); }, [adminPwHash]);
+  // Kein Default-Passwort im Code – Admin muss beim ersten Start selbst eines setzen
   const [deadlineDaysByMarket, setDeadlineDaysByMarket] = usePersistedState("deadlineDays", () =>
     Object.fromEntries(MARKETS.map(m => [m.id, DEFAULT_DEADLINE_DAYS]))
   );
@@ -672,7 +672,7 @@ function App() {
     location.reload();
   }
 
-  if (page === "login") return <LoginScreen employees={employees} onLogin={handleLogin} managerCreds={managerCreds} adminPwHash={adminPwHash} />;
+  if (page === "login") return <LoginScreen employees={employees} onLogin={handleLogin} managerCreds={managerCreds} adminPwHash={adminPwHash} onSetAdminPw={async pw => { const h = await hashPw(pw, "admin"); setAdminPwHash(h); }} />;
 
   if (page === "setPassword") {
     const me = employees.find(e => e.id === myEmployeeId);
@@ -738,34 +738,48 @@ function App() {
 }
 
 // ─── LOGIN ────────────────────────────────────────────────────────────────────
-function LoginScreen({ employees, onLogin, managerCreds, adminPwHash }) {
+function LoginScreen({ employees, onLogin, managerCreds, adminPwHash, onSetAdminPw }) {
   const [role, setRole] = useState(null);
   const [marketId, setMarketId] = useState("");
   const [employeeId, setEmployeeId] = useState("");
   const [password, setPassword] = useState("");
+  const [pw2, setPw2] = useState("");
   const [error, setError] = useState("");
+  const [adminSetup, setAdminSetup] = useState(false);
 
   const mktEmps = employees.filter(e => e.marketId === parseInt(marketId));
   const showMarketField = role === "manager" || role === "employee";
   const showPwField = role === "admin" || (role === "manager" && marketId) || (role === "employee" && employeeId);
   const canSubmit = role && password && (role === "admin" || (marketId && (role === "manager" ? true : employeeId)));
 
-  function reset() { setPassword(""); setError(""); }
+  function reset() { setPassword(""); setPw2(""); setError(""); setAdminSetup(false); }
 
   async function submit() {
     setError("");
     if (role === "admin") {
-      const ok = adminPwHash && adminPwHash === await hashPw(password, "admin");
+      if (!adminPwHash) {
+        // Ersteinrichtung: kein Passwort gesetzt → Setup-Modus
+        if (!adminSetup) { setAdminSetup(true); return; }
+        if (password.length < 8) { setError("Mindestens 8 Zeichen erforderlich."); return; }
+        if (password !== pw2) { setError("Passwörter stimmen nicht überein."); return; }
+        await onSetAdminPw(password);
+        onLogin({ role: "admin" });
+        return;
+      }
+      const ok = adminPwHash === await hashPw(password, "admin");
       if (!ok) { setError("Falsches Passwort."); return; }
       onLogin({ role: "admin" });
     } else if (role === "manager") {
       const stored = (managerCreds ?? DEFAULT_MANAGER_CREDS)[parseInt(marketId)];
-      const ok = isHashed(stored) ? stored === await hashPw(password, "mgr-" + marketId) : stored === password;
+      // Klartext-Fallback nur noch für Erst-Login mit 1234 (Migration) – danach nur noch Hashes
+      const ok = isHashed(stored)
+        ? stored === await hashPw(password, "mgr-" + marketId)
+        : (stored === password && stored === "1234"); // nur Default-PW als Klartext erlaubt
       if (!ok) { setError("Falsches Passwort."); return; }
       onLogin({ role: "manager", marketId: parseInt(marketId) });
     } else {
       const emp = employees.find(e => e.id === parseInt(employeeId));
-      const ok = emp && (emp.passwordHash ? emp.passwordHash === await hashPw(password, String(emp.id)) : emp.password === password);
+      const ok = emp && emp.passwordHash && emp.passwordHash === await hashPw(password, String(emp.id));
       if (!ok) { setError("Falscher Name oder Passwort."); return; }
       onLogin({ role: "employee", marketId: parseInt(marketId), employeeId: emp.id });
     }
@@ -815,13 +829,31 @@ function LoginScreen({ employees, onLogin, managerCreds, adminPwHash }) {
             </div>
           )}
 
-          {showPwField && (
+          {showPwField && !adminSetup && (
             <div className="field">
               <label>Passwort</label>
               <input type="password" placeholder="Passwort eingeben" value={password}
                 onChange={e => { setPassword(e.target.value); setError(""); }}
                 onKeyDown={e => e.key === "Enter" && canSubmit && submit()} />
             </div>
+          )}
+          {adminSetup && (
+            <>
+              <div style={{ background: "#FFF3CD", border: "1px solid #D97706", borderRadius: 8, padding: "10px 14px", marginBottom: 14, fontSize: 13, color: "#92400E" }}>
+                <b>Erstmalige Admin-Einrichtung</b><br/>Lege jetzt das Admin-Passwort fest. Es wird verschlüsselt gespeichert.
+              </div>
+              <div className="field">
+                <label>Neues Admin-Passwort</label>
+                <input type="password" placeholder="Mindestens 8 Zeichen" value={password}
+                  onChange={e => { setPassword(e.target.value); setError(""); }} autoFocus />
+              </div>
+              <div className="field">
+                <label>Passwort wiederholen</label>
+                <input type="password" placeholder="Bestätigen" value={pw2}
+                  onChange={e => { setPw2(e.target.value); setError(""); }}
+                  onKeyDown={e => e.key === "Enter" && password && pw2 && submit()} />
+              </div>
+            </>
           )}
 
           {error && <div className="auth-error">{error}</div>}
@@ -841,7 +873,7 @@ function SetPasswordView({ name, onSave }) {
   const [error, setError] = useState("");
 
   function handleSave() {
-    if (pw1.length < 4) { setError("Mindestens 4 Zeichen erforderlich."); return; }
+    if (pw1.length < 8) { setError("Mindestens 8 Zeichen erforderlich."); return; }
     if (pw1 !== pw2) { setError("Passwörter stimmen nicht überein."); return; }
     onSave(pw1);
   }
@@ -855,7 +887,7 @@ function SetPasswordView({ name, onSave }) {
         <div className="login-sub">Hallo {name}! Bitte lege jetzt dein persönliches Passwort fest.</div>
         <div className="field">
           <label>Neues Passwort</label>
-          <input type="password" placeholder="Mindestens 4 Zeichen" value={pw1}
+          <input type="password" placeholder="Mindestens 8 Zeichen" value={pw1}
             onChange={e => { setPw1(e.target.value); setError(""); }} />
         </div>
         <div className="field">
@@ -1015,7 +1047,7 @@ function EmployeeView({ me, marketId, availability, shifts, weekStart, weekDates
   }
 
   function handleChangePw() {
-    if (pw1.length < 4) { setPwErr("Mindestens 4 Zeichen."); return; }
+    if (pw1.length < 8) { setPwErr("Mindestens 8 Zeichen."); return; }
     if (pw1 !== pw2) { setPwErr("Passwörter stimmen nicht überein."); return; }
     onChangePassword(pw1); setPwSaved(true); setPw1(""); setPw2(""); setPwErr("");
     setTimeout(() => { setShowPwModal(false); setPwSaved(false); }, 1500);
@@ -1125,7 +1157,7 @@ function EmployeeView({ me, marketId, availability, shifts, weekStart, weekDates
             <div className="modal-t">Passwort ändern</div>
             <div className="modal-s">Lege ein neues persönliches Passwort fest.</div>
             <div className="field"><label>Neues Passwort</label>
-              <input type="password" placeholder="Mindestens 4 Zeichen" value={pw1}
+              <input type="password" placeholder="Mindestens 8 Zeichen" value={pw1}
                 onChange={e => { setPw1(e.target.value); setPwErr(""); }} />
             </div>
             <div className="field" style={{ marginBottom: 6 }}><label>Wiederholen</label>
