@@ -619,6 +619,8 @@ function App() {
     Object.fromEntries(MARKETS.map(m => [m.id, { roles: DEFAULT_ROLES.map(r => ({ ...r })), thresholds: { ...DEFAULT_THRESHOLDS } }]))
   );
   const [managerCreds, setManagerCreds] = usePersistedState("managerCreds", () => ({ ...DEFAULT_MANAGER_CREDS }));
+  const [adminPwHash, setAdminPwHash] = usePersistedState("adminPwHash", null);
+  useEffect(() => { if (!adminPwHash) hashPw("Max14Sep", "admin").then(h => setAdminPwHash(h)); }, [adminPwHash]);
   const [deadlineDaysByMarket, setDeadlineDaysByMarket] = usePersistedState("deadlineDays", () =>
     Object.fromEntries(MARKETS.map(m => [m.id, DEFAULT_DEADLINE_DAYS]))
   );
@@ -670,7 +672,7 @@ function App() {
     location.reload();
   }
 
-  if (page === "login") return <LoginScreen employees={employees} onLogin={handleLogin} managerCreds={managerCreds} />;
+  if (page === "login") return <LoginScreen employees={employees} onLogin={handleLogin} managerCreds={managerCreds} adminPwHash={adminPwHash} />;
 
   if (page === "setPassword") {
     const me = employees.find(e => e.id === myEmployeeId);
@@ -736,7 +738,7 @@ function App() {
 }
 
 // ─── LOGIN ────────────────────────────────────────────────────────────────────
-function LoginScreen({ employees, onLogin, managerCreds }) {
+function LoginScreen({ employees, onLogin, managerCreds, adminPwHash }) {
   const [role, setRole] = useState(null);
   const [marketId, setMarketId] = useState("");
   const [employeeId, setEmployeeId] = useState("");
@@ -745,14 +747,16 @@ function LoginScreen({ employees, onLogin, managerCreds }) {
 
   const mktEmps = employees.filter(e => e.marketId === parseInt(marketId));
   const showMarketField = role === "manager" || role === "employee";
-  const showPwField = (role === "manager" && marketId) || (role === "employee" && employeeId);
-  const canSubmit = role && (role === "admin" || (marketId && (role === "manager" ? true : employeeId) && password));
+  const showPwField = role === "admin" || (role === "manager" && marketId) || (role === "employee" && employeeId);
+  const canSubmit = role && password && (role === "admin" || (marketId && (role === "manager" ? true : employeeId)));
 
   function reset() { setPassword(""); setError(""); }
 
   async function submit() {
     setError("");
     if (role === "admin") {
+      const ok = adminPwHash && adminPwHash === await hashPw(password, "admin");
+      if (!ok) { setError("Falsches Passwort."); return; }
       onLogin({ role: "admin" });
     } else if (role === "manager") {
       const stored = (managerCreds ?? DEFAULT_MANAGER_CREDS)[parseInt(marketId)];
@@ -822,8 +826,6 @@ function LoginScreen({ employees, onLogin, managerCreds }) {
 
           {error && <div className="auth-error">{error}</div>}
 
-          {role === "manager" && marketId && !error && <div className="pw-hint">Standard-Passwort (Testphase): <strong>1234</strong></div>}
-          {role === "employee" && employeeId && !error && <div className="pw-hint">Standard-Passwort (Testphase): <strong>1234</strong></div>}
         </>}
 
         <button className="btn-primary" disabled={!canSubmit} onClick={submit}>Anmelden</button>
