@@ -368,7 +368,7 @@ if (CLOUD_ENABLED) {
 // ─── PERSISTENZ (localStorage) ───────────────────────────────────────────────
 const LS_PREFIX  = "marktplan:";
 const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
-const APP_BUILD  = "20260702-3"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
+const APP_BUILD  = "20260702-4"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
 
 function clearAllPersistedState() {
   try {
@@ -1081,7 +1081,8 @@ function EmployeeView({ me, marketId, availability, shifts, weekStart, weekDates
 
   const [form, setForm] = useState(buildForm);
   const [saved, setSaved] = useState(null); // null = unberührt, false = geändert, true = gespeichert
-  useEffect(() => { setForm(buildForm()); setSaved(null); }, [weekStart, me?.id, availability, weekDates]);
+  useEffect(() => { setForm(buildForm()); }, [weekStart, me?.id, availability, weekDates]);
+  useEffect(() => { setSaved(null); }, [weekStart, me?.id]);
 
   const setDay = (ds, patch) => { setForm(f => ({ ...f, [ds]: { ...f[ds], ...patch } })); setSaved(false); };
 
@@ -1135,10 +1136,18 @@ function EmployeeView({ me, marketId, availability, shifts, weekStart, weekDates
             : weekDates.map((d, i) => {
                 const sh = myShifts.find(s => s.date === fmtISO(d));
                 if (!sh) return null;
+                const shRoles = sh.roles ?? (sh.role ? [sh.role] : []);
                 return (
                   <div key={fmtISO(d)} className="sched-row">
                     <div className="sched-day">{DAY_NAMES[i]}, {fmtShort(d)}</div>
                     <div className="sched-time">{sh.startTime} – {sh.endTime} Uhr</div>
+                    {shRoles.length > 0 && (
+                      <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                        {shRoles.map(r => (
+                          <span key={r} style={{ fontSize: 11, fontWeight: 700, background: "#EFF6FF", color: "#1D4ED8", border: "1px solid #BFDBFE", borderRadius: 6, padding: "2px 8px" }}>{r}</span>
+                        ))}
+                      </div>
+                    )}
                     <div className="sched-badge">Eingeplant</div>
                   </div>
                 );
@@ -1979,6 +1988,13 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
   const [autoPlanProposal, setAutoPlanProposal] = useState([]);
   const [editProposal, setEditProposal] = useState(null); // { shift, empName }
   const [zeitkontoEmp, setZeitkontoEmp] = useState(null); // employee-Objekt
+  const [toast, setToast] = useState("");
+  const toastTimer = useRef(null);
+  function flash(msg) {
+    setToast(msg);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(""), 2500);
+  }
 
   const mktEmps = useMemo(() => employees.filter(e => e.marketId === marketId).sort((a, b) => (b.isMarktleiter ? 1 : 0) - (a.isMarktleiter ? 1 : 0)), [employees, marketId]);
   const weekStrs = useMemo(() => weekDates.map(fmtISO), [weekDates]);
@@ -2023,6 +2039,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
     if (!newEmpName.trim() || !newEmpPw) return;
     onAddEmployee(newEmpName.trim(), newEmpPw, newEmpHours ? parseInt(newEmpHours) : null, newEmpRoles);
     setShowAddEmp(false); setNewEmpName(""); setNewEmpPw(""); setNewEmpHours(""); setNewEmpRoles([]);
+    flash("✓ Mitarbeiter angelegt");
   }
 
   function toggleNewEmpRole(rname) {
@@ -2035,6 +2052,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
     if (editEmp.newPassword?.trim()) { changes.password = editEmp.newPassword.trim(); changes.mustChangePw = true; }
     onUpdateEmployee(editEmp.id, changes);
     setEditEmp(null);
+    flash(changes.password ? "✓ Gespeichert – Passwort zurückgesetzt" : "✓ Änderungen gespeichert");
   }
 
   function openCell(emp, ds) {
@@ -2061,11 +2079,18 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
     if (modal.sh) onDelShift(modal.sh.id);
     onAddShift({ employeeId: modal.emp.id, date: modal.date, startTime: shiftStart, endTime: shiftEnd, roles: shiftRoles });
     setModal(null);
+    flash("✓ Schicht gespeichert");
   }
 
   return (
     <div className="app">
-      
+      {toast && (
+        <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", zIndex: 9999,
+          background: "#15803D", color: "#fff", fontWeight: 700, fontSize: 14, padding: "10px 22px",
+          borderRadius: 10, boxShadow: "0 6px 24px rgba(0,0,0,.25)", pointerEvents: "none" }}>
+          {toast}
+        </div>
+      )}
       <div className="mob-bar">
         <button className="burger" onClick={() => setSbOpen(true)}>☰</button>
         <span className="mob-logo">Markt<b>Plan</b></span>
@@ -2275,7 +2300,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
               <span style={{ fontSize: 13, fontWeight: 700, color: "#1D4ED8", flex: 1 }}>
                 ✨ {autoPlanProposal.length} Schichten vorgeschlagen
               </span>
-              <button onClick={() => { onBulkAddShifts(autoPlanProposal); setAutoPlanProposal([]); }}
+              <button onClick={() => { onBulkAddShifts(autoPlanProposal); setAutoPlanProposal([]); flash("✓ Schichtplan übernommen"); }}
                 style={{ background: "#3B82F6", color: "#fff", border: "none", borderRadius: 7, padding: "6px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
                 ✅ Übernehmen
               </button>
@@ -2704,7 +2729,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
             {timeErr && <div className="auth-error" style={{ marginBottom: 12 }}>{timeErr}</div>}
             <div className="macts">
               <button className="btn-cancel" onClick={() => setModal(null)}>Abbrechen</button>
-              {modal.sh && <button className="btn-del" onClick={() => { onDelShift(modal.sh.id); setModal(null); }}>Löschen</button>}
+              {modal.sh && <button className="btn-del" onClick={() => { onDelShift(modal.sh.id); setModal(null); flash("✓ Schicht gelöscht"); }}>Löschen</button>}
               <button className="btn-ok" disabled={!shiftStart || !shiftEnd} onClick={confirmShift}>
                 {modal.sh ? "Speichern" : "Einplanen"}
               </button>
@@ -2738,6 +2763,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                   }
                   onUpdateManagerCreds(updated);
                   setShowManagerPw(false);
+                  flash("✓ Passwörter gespeichert");
                 }}>Speichern</button>
               </div>
             </div>
@@ -2953,11 +2979,11 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
 
 
       {showDelivery && (
-        <DeliveryModal config={deliveryConfig} onSave={onUpdateDelivery} onClose={() => setShowDelivery(false)} />
+        <DeliveryModal config={deliveryConfig} onSave={cfg => { onUpdateDelivery(cfg); flash("✓ Lieferplan gespeichert"); }} onClose={() => setShowDelivery(false)} />
       )}
 
       {showRoles && (
-        <RolesModal roles={roles} thresholds={thresholds} marketHours={marketHours} onSave={onUpdateRoles} onClose={() => setShowRoles(false)} />
+        <RolesModal roles={roles} thresholds={thresholds} marketHours={marketHours} onSave={(r, t, mh) => { onUpdateRoles(r, t, mh); flash("✓ Abteilungen gespeichert"); }} onClose={() => setShowRoles(false)} />
       )}
 
       {delEmpModal && (
@@ -2971,7 +2997,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
             </div>
             <div className="macts">
               <button className="btn-cancel" onClick={() => setDelEmpModal(null)}>Abbrechen</button>
-              <button className="btn-del" onClick={() => { onDeleteEmployee(delEmpModal.id); setDelEmpModal(null); }}>
+              <button className="btn-del" onClick={() => { onDeleteEmployee(delEmpModal.id); setDelEmpModal(null); flash("✓ Mitarbeiter entfernt"); }}>
                 Endgültig löschen
               </button>
             </div>
