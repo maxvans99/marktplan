@@ -370,7 +370,7 @@ if (CLOUD_ENABLED) {
 // ─── PERSISTENZ (localStorage) ───────────────────────────────────────────────
 const LS_PREFIX  = "marktplan:";
 const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
-const APP_BUILD  = "20260702-5"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
+const APP_BUILD  = "20260702-6"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
 
 function clearAllPersistedState() {
   try {
@@ -413,6 +413,12 @@ function loadLS(key, fallback) {
   } catch { return typeof fallback === "function" ? fallback() : fallback; }
 }
 
+// "Leer" im Sinne des Überschreib-Schutzes: null, leeres Array, leeres Objekt
+function isEmptyData(v) {
+  return v == null || (Array.isArray(v) && v.length === 0)
+    || (typeof v === "object" && Object.keys(v).length === 0);
+}
+
 function usePersistedState(key, initial) {
   const [val, setVal] = useState(() => loadLS(key, initial));
   const skipWrite = useRef(false);
@@ -420,6 +426,9 @@ function usePersistedState(key, initial) {
   // Sonst überschreibt ein frisch geladener Client (z.B. nach Build-Reset mit
   // leerem localStorage) die kompletten Cloud-Daten mit seinem leeren Zustand.
   const cloudReady = useRef(!CLOUD_ENABLED);
+  // Merkt sich, ob die Cloud zuletzt echte Daten hatte → leere Werte dürfen
+  // dann nicht mehr in die Cloud geschrieben werden (zweite Verteidigungslinie).
+  const remoteHadData = useRef(false);
 
   // Cloud-Sync: live abonnieren
   useEffect(() => {
@@ -431,6 +440,7 @@ function usePersistedState(key, initial) {
         skipWrite.current = true;
         bumpIdFrom(remote);
         cloudReady.current = true;
+        remoteHadData.current = !isEmptyData(remote);
         setVal(remote);
         try { localStorage.setItem(LS_PREFIX + key, JSON.stringify(remote)); } catch {}
       } else {
@@ -447,7 +457,13 @@ function usePersistedState(key, initial) {
     if (skipWrite.current) { skipWrite.current = false; return; }
     try { localStorage.setItem(LS_PREFIX + key, JSON.stringify(val)); } catch {}
     if (CLOUD_ENABLED && cloudReady.current) {
+      // Schutz: vorhandene Cloud-Daten nie mit leeren Daten überschreiben
+      if (remoteHadData.current && isEmptyData(val)) {
+        console.warn("Cloud-Schreibschutz:", key, "— leerer Wert wird nicht über vorhandene Daten geschrieben.");
+        return;
+      }
       try { db.collection("marktplan").doc(key).set({ data: val }).catch(() => {}); } catch {}
+      if (!isEmptyData(val)) remoteHadData.current = true;
     }
   }, [key, val]);
 
@@ -715,6 +731,38 @@ function App() {
     return () => { cancelled = true; };
   }, []);
 
+  // Tägliches Cloud-Backup: pro Wochentag ein Sicherungs-Dokument (rollierend 7 Tage).
+  // Läuft beim ersten Gerät des Tages; überschreibt das Backup desselben Wochentags von letzter Woche.
+  useEffect(() => {
+    if (!CLOUD_ENABLED) return;
+    const keys = ["employees", "availability", "shifts", "deliveryConfig", "rolesConfig", "managerCreds", "adminPwHash", "deadlineDays"];
+    const day = new Date().getDay();
+    const stamp = fmtISO(new Date());
+    keys.forEach(k => {
+      const bref = db.collection("marktplan").doc(`backup:${k}:${day}`);
+      bref.get().then(bsnap => {
+        if (bsnap.exists && bsnap.data().stamp === stamp) return; // heute schon gesichert
+        db.collection("marktplan").doc(k).get().then(s => {
+          if (s.exists && !isEmptyData(s.data().data)) bref.set({ data: s.data().data, stamp }).catch(() => {});
+        }).catch(() => {});
+      }).catch(() => {});
+    });
+  }, []);
+
+  function downloadBackup() {
+    const dump = { exportedAt: new Date().toISOString(), build: APP_BUILD, data: {} };
+    try {
+      Object.keys(localStorage).filter(k => k.startsWith(LS_PREFIX) && k !== LS_PREFIX + "build")
+        .forEach(k => { try { dump.data[k.slice(LS_PREFIX.length)] = JSON.parse(localStorage.getItem(k)); } catch {} });
+    } catch {}
+    const blob = new Blob([JSON.stringify(dump, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `marktplan-backup-${fmtISO(new Date())}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
   function resetAllData() {
     clearAllPersistedState();
     location.reload();
@@ -790,6 +838,7 @@ function App() {
       onResetData={resetAllData}
       managerCreds={managerCreds}
       onUpdateManagerCreds={creds => setManagerCreds(creds)}
+      onDownloadBackup={downloadBackup}
     />
   );
 }
@@ -1978,7 +2027,7 @@ function ZeitkontoModal({ emp, shifts, onClose }) {
   );
 }
 
-function ManagerView({ marketId, onMarketChange, isAdmin, employees, availability, shifts, weekStart, weekDates, onWeekChange, onAddShift, onDelShift, onAddEmployee, onDeleteEmployee, onUpdateEmployee, onImportAvailability, deliveryConfig, onUpdateDelivery, roles, thresholds, marketHours, onUpdateRoles, onUpdateMarketHours, onBulkAddShifts, onLogout, onResetData, managerCreds, onUpdateManagerCreds, deadlineDaysByMarket, onUpdateDeadlineDaysByMarket }) {
+function ManagerView({ marketId, onMarketChange, isAdmin, employees, availability, shifts, weekStart, weekDates, onWeekChange, onAddShift, onDelShift, onAddEmployee, onDeleteEmployee, onUpdateEmployee, onImportAvailability, deliveryConfig, onUpdateDelivery, roles, thresholds, marketHours, onUpdateRoles, onUpdateMarketHours, onBulkAddShifts, onLogout, onResetData, managerCreds, onUpdateManagerCreds, deadlineDaysByMarket, onUpdateDeadlineDaysByMarket, onDownloadBackup }) {
   const [sbOpen, setSbOpen] = useState(false);
   const [modal, setModal] = useState(null);
   const [delEmpModal, setDelEmpModal] = useState(null);
@@ -2123,7 +2172,13 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
             <div className="ph-title">{market?.name ?? "Markt wählen"}</div>
             <div className="ph-sub">Schichtplan verwalten</div>
           </div>
-          <button className="btn-logout-top" onClick={onLogout}>← Abmelden</button>
+          <div style={{ display: "flex", gap: 8 }}>
+            {isAdmin && onDownloadBackup && (
+              <button className="btn-logout-top" style={{ background: "#EFF6FF", color: "#1D4ED8", borderColor: "#BFDBFE" }}
+                onClick={() => { onDownloadBackup(); flash("✓ Backup heruntergeladen"); }}>💾 Backup</button>
+            )}
+            <button className="btn-logout-top" onClick={onLogout}>← Abmelden</button>
+          </div>
         </div>
 
         {!marketId ? (
