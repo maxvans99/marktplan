@@ -368,7 +368,7 @@ if (CLOUD_ENABLED) {
 // ─── PERSISTENZ (localStorage) ───────────────────────────────────────────────
 const LS_PREFIX  = "marktplan:";
 const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
-const APP_BUILD  = "20260702-2"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
+const APP_BUILD  = "20260702-3"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
 
 function clearAllPersistedState() {
   try {
@@ -439,7 +439,7 @@ function usePersistedState(key, initial) {
     if (skipWrite.current) { skipWrite.current = false; return; }
     try { localStorage.setItem(LS_PREFIX + key, JSON.stringify(val)); } catch {}
     if (CLOUD_ENABLED) {
-      db.collection("marktplan").doc(key).set({ data: val }).catch(() => {});
+      try { db.collection("marktplan").doc(key).set({ data: val }).catch(() => {}); } catch {}
     }
   }, [key, val]);
 
@@ -724,7 +724,11 @@ function App() {
         onSave={avails => saveAvailability(myEmployeeId, avails)}
         onChangePassword={async newPw => {
           const passwordHash = await hashPw(newPw, String(myEmployeeId));
-          setEmployees(p => p.map(e => e.id === myEmployeeId ? { ...e, passwordHash, password: undefined } : e));
+          setEmployees(p => p.map(e => {
+            if (e.id !== myEmployeeId) return e;
+            const { password: _old, ...base } = e;
+            return { ...base, passwordHash };
+          }));
         }}
       />
     );
@@ -745,9 +749,14 @@ function App() {
       onUpdateEmployee={async (id, changes) => {
         if (changes.password) {
           const passwordHash = await hashPw(changes.password, String(id));
-          changes = { ...changes, passwordHash, password: undefined };
+          const { password: _pw, ...rest } = changes;
+          changes = { ...rest, passwordHash };
         }
-        setEmployees(p => p.map(e => e.id === id ? { ...e, ...changes } : e));
+        setEmployees(p => p.map(e => {
+          if (e.id !== id) return e;
+          const { password: _old, ...base } = e;
+          return { ...base, ...changes };
+        }));
       }}
       onDeleteEmployee={empId => {
         setEmployees(p => p.filter(e => e.id !== empId));
