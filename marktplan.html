@@ -361,16 +361,30 @@ const CLOUD_ENABLED = (!IS_LOCAL || new URLSearchParams(location.search).has("cl
   && !!firebaseConfig.apiKey && IS_LICENSED;
 
 let db = null;
+// authReady: Cloud-Zugriffe warten, bis die anonyme Anmeldung fertig ist.
+// Sonst starten Lese-/Schreibzugriffe vor der Auth, werden von den Firestore-
+// Regeln abgelehnt und das Gerät synchronisiert nie (besonders auf Handys).
+let authReady = Promise.resolve();
 if (CLOUD_ENABLED) {
   firebase.initializeApp(firebaseConfig);
   db = firebase.firestore();
-  firebase.auth().signInAnonymously().catch(e => console.warn("Auth:", e));
+  authReady = new Promise(resolve => {
+    firebase.auth().onAuthStateChanged(user => { if (user) resolve(); });
+    firebase.auth().signInAnonymously().catch(e => { console.warn("Auth:", e); reportCloudError(e); });
+  });
+}
+
+// Cloud-Fehler sichtbar machen statt stumm zu verschlucken
+function reportCloudError(e) {
+  const code = (e && e.code) || String(e);
+  console.warn("Cloud-Fehler:", code);
+  try { window.dispatchEvent(new CustomEvent("cloud-error", { detail: code })); } catch {}
 }
 
 // ─── PERSISTENZ (localStorage) ───────────────────────────────────────────────
 const LS_PREFIX  = "marktplan:";
 const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
-const APP_BUILD  = "20260702-7"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
+const APP_BUILD  = "20260702-8"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
 
 function clearAllPersistedState() {
   try {
@@ -419,6 +433,21 @@ function isEmptyData(v) {
     || (typeof v === "object" && Object.keys(v).length === 0);
 }
 
+// Führt Cloud-Stand und lokale Vor-Sync-Änderungen zusammen (lokal gewinnt pro Eintrag)
+function mergeLocalIntoRemote(remote, local) {
+  if (Array.isArray(remote) && Array.isArray(local)) {
+    const byId = new Map();
+    remote.forEach(x => byId.set(x && x.id != null ? x.id : Symbol(), x));
+    local.forEach(x => byId.set(x && x.id != null ? x.id : Symbol(), x));
+    return [...byId.values()];
+  }
+  if (remote && local && typeof remote === "object" && typeof local === "object"
+      && !Array.isArray(remote) && !Array.isArray(local)) {
+    return { ...remote, ...local };
+  }
+  return local != null && !isEmptyData(local) ? local : remote;
+}
+
 function usePersistedState(key, initial) {
   const [val, setVal] = useState(() => loadLS(key, initial));
   const skipWrite = useRef(false);
@@ -429,42 +458,61 @@ function usePersistedState(key, initial) {
   // Merkt sich, ob die Cloud zuletzt echte Daten hatte → leere Werte dürfen
   // dann nicht mehr in die Cloud geschrieben werden (zweite Verteidigungslinie).
   const remoteHadData = useRef(false);
+  // Wurde lokal etwas geändert, BEVOR der erste Cloud-Stand ankam?
+  // Dann beim ersten Snapshot zusammenführen statt die Änderung zu verwerfen.
+  const dirtyPreSync = useRef(false);
 
-  // Cloud-Sync: live abonnieren
+  // Cloud-Sync: live abonnieren (erst nach abgeschlossener Anmeldung)
   useEffect(() => {
     if (!CLOUD_ENABLED) return;
+    let unsub = null, cancelled = false;
     const ref = db.collection("marktplan").doc(key);
-    const unsub = ref.onSnapshot(snap => {
-      if (snap.exists) {
-        const remote = snap.data().data;
-        skipWrite.current = true;
-        bumpIdFrom(remote);
-        cloudReady.current = true;
-        remoteHadData.current = !isEmptyData(remote);
-        setVal(remote);
-        try { localStorage.setItem(LS_PREFIX + key, JSON.stringify(remote)); } catch {}
-      } else {
-        // Dokument fehlt → mit aktuellem lokalen Wert anlegen
-        cloudReady.current = true;
-        setVal(cur => { ref.set({ data: cur }).catch(() => {}); return cur; });
-      }
-    }, err => console.warn("Snapshot", key, err));
-    return unsub;
+    authReady.then(() => {
+      if (cancelled) return;
+      unsub = ref.onSnapshot(snap => {
+        if (snap.exists) {
+          const remote = snap.data().data;
+          const firstSync = !cloudReady.current;
+          cloudReady.current = true;
+          remoteHadData.current = !isEmptyData(remote);
+          skipWrite.current = true;
+          setVal(cur => {
+            let next = remote;
+            if (firstSync && dirtyPreSync.current) {
+              next = mergeLocalIntoRemote(remote, cur);
+              dirtyPreSync.current = false;
+              if (JSON.stringify(next) !== JSON.stringify(remote)) {
+                ref.set({ data: next }).catch(e => reportCloudError(e));
+              }
+            }
+            bumpIdFrom(next);
+            try { localStorage.setItem(LS_PREFIX + key, JSON.stringify(next)); } catch {}
+            return next;
+          });
+        } else {
+          // Dokument fehlt → mit aktuellem lokalen Wert anlegen
+          cloudReady.current = true;
+          dirtyPreSync.current = false;
+          setVal(cur => { ref.set({ data: cur }).catch(e => reportCloudError(e)); return cur; });
+        }
+      }, err => { console.warn("Snapshot", key, err); reportCloudError(err); });
+    });
+    return () => { cancelled = true; if (unsub) unsub(); };
   }, [key]);
 
   // Schreiben (localStorage immer, Cloud erst nach erstem Snapshot)
   useEffect(() => {
     if (skipWrite.current) { skipWrite.current = false; return; }
     try { localStorage.setItem(LS_PREFIX + key, JSON.stringify(val)); } catch {}
-    if (CLOUD_ENABLED && cloudReady.current) {
-      // Schutz: vorhandene Cloud-Daten nie mit leeren Daten überschreiben
-      if (remoteHadData.current && isEmptyData(val)) {
-        console.warn("Cloud-Schreibschutz:", key, "— leerer Wert wird nicht über vorhandene Daten geschrieben.");
-        return;
-      }
-      try { db.collection("marktplan").doc(key).set({ data: val }).catch(() => {}); } catch {}
-      if (!isEmptyData(val)) remoteHadData.current = true;
+    if (!CLOUD_ENABLED) return;
+    if (!cloudReady.current) { dirtyPreSync.current = true; return; }
+    // Schutz: vorhandene Cloud-Daten nie mit leeren Daten überschreiben
+    if (remoteHadData.current && isEmptyData(val)) {
+      console.warn("Cloud-Schreibschutz:", key, "— leerer Wert wird nicht über vorhandene Daten geschrieben.");
+      return;
     }
+    try { db.collection("marktplan").doc(key).set({ data: val }).catch(e => reportCloudError(e)); } catch (e) { reportCloudError(e); }
+    if (!isEmptyData(val)) remoteHadData.current = true;
   }, [key, val]);
 
   return [val, setVal];
@@ -630,6 +678,25 @@ function LicenseBlock() {
   );
 }
 
+// Roter Warnbalken, wenn die Cloud-Synchronisierung fehlschlägt
+function CloudErrorBanner() {
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    const h = e => setErr(e.detail || "unbekannt");
+    window.addEventListener("cloud-error", h);
+    return () => window.removeEventListener("cloud-error", h);
+  }, []);
+  if (!err) return null;
+  return (
+    <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 10000, background: "#DC2626", color: "#fff",
+      fontSize: 13, fontWeight: 600, padding: "8px 40px 8px 14px", textAlign: "center", boxShadow: "0 2px 12px rgba(0,0,0,.3)" }}>
+      ⚠ Cloud-Synchronisierung fehlgeschlagen ({err}) — Änderungen werden möglicherweise nicht gespeichert. Bitte Internetverbindung prüfen und Seite neu laden.
+      <button onClick={() => setErr("")} style={{ position: "absolute", right: 8, top: 4, background: "none", border: "none",
+        color: "#fff", fontSize: 18, cursor: "pointer", lineHeight: 1 }}>×</button>
+    </div>
+  );
+}
+
 function App() {
   if (!IS_LICENSED) return <LicenseBlock />;
   const [page, setPage] = useState("login"); // login | employee | manager | setPassword
@@ -763,7 +830,7 @@ function App() {
     const keys = ["employees", "availability", "shifts", "deliveryConfig", "rolesConfig", "managerCreds", "adminPwHash", "deadlineDays"];
     const day = new Date().getDay();
     const stamp = fmtISO(new Date());
-    keys.forEach(k => {
+    authReady.then(() => keys.forEach(k => {
       const bref = db.collection("marktplan").doc(`backup:${k}:${day}`);
       bref.get().then(bsnap => {
         if (bsnap.exists && bsnap.data().stamp === stamp) return; // heute schon gesichert
@@ -771,7 +838,7 @@ function App() {
           if (s.exists && !isEmptyData(s.data().data)) bref.set({ data: s.data().data, stamp }).catch(() => {});
         }).catch(() => {});
       }).catch(() => {});
-    });
+    }));
   }, []);
 
   function downloadBackup() {
@@ -3098,7 +3165,15 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
   );
 }
 
-    ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+    function Root() {
+      return (
+        <>
+          <CloudErrorBanner />
+          <App />
+        </>
+      );
+    }
+    ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(Root));
   </script>
 </body>
 </html>
