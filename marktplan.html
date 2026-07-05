@@ -384,7 +384,7 @@ function reportCloudError(e) {
 // ─── PERSISTENZ (localStorage) ───────────────────────────────────────────────
 const LS_PREFIX  = "marktplan:";
 const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
-const APP_BUILD  = "20260702-10"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
+const APP_BUILD  = "20260702-12"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
 
 function clearAllPersistedState() {
   try {
@@ -1149,6 +1149,7 @@ function CloudBadge() {
 function Sidebar({ role, marketId, isAdmin, onMarketChange, onLogout, empName, onChangePw, sbOpen, onClose, onShowDelivery, onShowScan, onShowAddEmp, onShowRoles, onResetData, onShowManagerPw, onShowDeadline }) {
   const market = MARKETS.find(m => m.id === marketId);
   const action = (fn) => () => { fn?.(); onClose(); };
+  const [showResetModal, setShowResetModal] = useState(false);
   return (
     <div className={`sidebar ${sbOpen ? "sb-open" : ""}`}>
       <div className="sb-close-row">
@@ -1210,8 +1211,7 @@ function Sidebar({ role, marketId, isAdmin, onMarketChange, onLogout, empName, o
             </div>
           )}
           {onResetData && (
-            <div className="sb-item" style={{ color: "#F87171" }}
-              onClick={() => { if (confirm("Wirklich ALLE gespeicherten Daten löschen und auf die Demo-Daten zurücksetzen? Das kann nicht rückgängig gemacht werden.")) onResetData(); }}>
+            <div className="sb-item" style={{ color: "#F87171" }} onClick={() => setShowResetModal(true)}>
               <span style={{ fontSize: 13 }}>🗑️</span> Daten zurücksetzen
             </div>
           )}
@@ -1220,6 +1220,52 @@ function Sidebar({ role, marketId, isAdmin, onMarketChange, onLogout, empName, o
       <div className="sb-footer">
         <div className="sb-logout" onClick={onLogout}>← Abmelden</div>
         {CLOUD_ENABLED && <CloudBadge />}
+      </div>
+      {showResetModal && (
+        <ResetDataModal onConfirm={() => { setShowResetModal(false); onResetData(); }} onClose={() => setShowResetModal(false)} />
+      )}
+    </div>
+  );
+}
+
+// Zweistufige Sicherung fürs Datenreset: erst bewusste Bestätigung, dann
+// Eintippen von "LÖSCHEN" — ein einzelner Klick reicht nicht mehr aus.
+function ResetDataModal({ onConfirm, onClose }) {
+  const [step, setStep] = useState(1);
+  const [word, setWord] = useState("");
+  return (
+    <div className="ov" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        {step === 1 ? (
+          <>
+            <div className="modal-t">⚠️ Alle Daten löschen?</div>
+            <div className="modal-s">
+              Das löscht <b>unwiderruflich alle Mitarbeiter, Schichten, Verfügbarkeiten und Passwörter</b> — auch in der Cloud, auf allen Geräten. Diese Aktion kann nicht rückgängig gemacht werden.
+            </div>
+            <div className="macts">
+              <button className="btn-cancel" onClick={onClose}>Abbrechen</button>
+              <button className="btn-del" onClick={() => setStep(2)}>Verstanden, weiter</button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="modal-t">Letzte Bestätigung</div>
+            <div className="modal-s">
+              Tippe <b>LÖSCHEN</b> ein, um endgültig alle Daten zu entfernen.
+            </div>
+            <div className="field">
+              <input type="text" autoFocus value={word} onChange={e => setWord(e.target.value)}
+                placeholder="LÖSCHEN" onKeyDown={e => e.key === "Enter" && word.trim().toUpperCase() === "LÖSCHEN" && onConfirm()} />
+            </div>
+            <div className="macts">
+              <button className="btn-cancel" onClick={onClose}>Abbrechen</button>
+              <button className="btn-del" disabled={word.trim().toUpperCase() !== "LÖSCHEN"} onClick={onConfirm}
+                style={word.trim().toUpperCase() !== "LÖSCHEN" ? { opacity: 0.4, cursor: "not-allowed" } : undefined}>
+                Endgültig löschen
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -2955,7 +3001,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
       {/* Eintragefrist Modal (nur Admin) — fragt zuerst nach dem Markt */}
       {showDeadline && isAdmin && (
         <DeadlineModal deadlineDaysByMarket={deadlineDaysByMarket ?? {}}
-          onSave={(mId, val) => onUpdateDeadlineDaysByMarket(prev => ({ ...(prev ?? {}), [mId]: val }))}
+          onSave={(mId, val) => { onUpdateDeadlineDaysByMarket(prev => ({ ...(prev ?? {}), [mId]: val })); flash("✓ Eintragefrist gespeichert"); }}
           onClose={() => setShowDeadline(false)} />
       )}
 
@@ -3155,7 +3201,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
 
       {showScan && (
         <ScanModal marketId={marketId} employees={employees}
-          onImport={onImportAvailability} onClose={() => setShowScan(false)} />
+          onImport={(...args) => { onImportAvailability(...args); flash("✓ Verfügbarkeiten importiert"); }} onClose={() => setShowScan(false)} />
       )}
 
 
