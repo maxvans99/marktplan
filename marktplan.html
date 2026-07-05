@@ -384,7 +384,7 @@ function reportCloudError(e) {
 // ─── PERSISTENZ (localStorage) ───────────────────────────────────────────────
 const LS_PREFIX  = "marktplan:";
 const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
-const APP_BUILD  = "20260702-9"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
+const APP_BUILD  = "20260702-10"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
 
 function clearAllPersistedState() {
   try {
@@ -862,6 +862,25 @@ function App() {
 
   function resetAllData() {
     clearAllPersistedState();
+    if (CLOUD_ENABLED) {
+      // Ohne das hier zu leeren, synchronisiert der Cloud-Stand sofort zurück
+      // und der "Reset" hätte auf der Live-Site keine sichtbare Wirkung.
+      const defaults = {
+        employees: SEED_EMP,
+        availability: [],
+        shifts: [],
+        deliveryConfig: Object.fromEntries(MARKETS.map(m => [m.id, defaultDelivery()])),
+        rolesConfig: Object.fromEntries(MARKETS.map(m => [m.id, { roles: DEFAULT_ROLES.map(r => ({ ...r })), thresholds: { ...DEFAULT_THRESHOLDS } }])),
+        managerCreds: { ...DEFAULT_MANAGER_CREDS },
+        adminPwHash: null,
+        deadlineDays: Object.fromEntries(MARKETS.map(m => [m.id, DEFAULT_DEADLINE_DAYS])),
+      };
+      authReady.then(() => {
+        Promise.all(Object.entries(defaults).map(([k, v]) => db.collection("marktplan").doc(k).set({ data: v }).catch(() => {})))
+          .then(() => location.reload());
+      });
+      return;
+    }
     location.reload();
   }
 
