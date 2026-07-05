@@ -322,6 +322,23 @@
   .spin { display: inline-block; animation: spin 1s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
+  /* ── PDF-EXPORT (Druckansicht) ── */
+  .btn-pdf { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; background: #fff; color: #1E293B; border: 1.5px solid #E2E8F0; border-radius: 8px; padding: 8px 16px; cursor: pointer; margin-top: 14px; }
+  .btn-pdf:hover { border-color: #3B82F6; color: #3B82F6; }
+  #print-plan { display: none; }
+  @media print {
+    body * { visibility: hidden; }
+    #print-plan, #print-plan * { visibility: visible; }
+    #print-plan { display: block; position: absolute; top: 0; left: 0; width: 100%; padding: 16px; }
+    #print-plan h1 { font-size: 18px; margin-bottom: 2px; }
+    #print-plan .pp-sub { font-size: 12px; color: #475569; margin-bottom: 14px; }
+    #print-plan table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    #print-plan th, #print-plan td { border: 1px solid #CBD5E1; padding: 5px 6px; text-align: left; vertical-align: top; }
+    #print-plan th { background: #F1F5F9; font-size: 10px; text-transform: uppercase; letter-spacing: .03em; }
+    #print-plan .pp-role { display: inline-block; font-size: 9px; font-weight: 700; background: #E2E8F0; border-radius: 3px; padding: 1px 4px; margin: 1px 2px 0 0; }
+    @page { size: landscape; margin: 12mm; }
+  }
+
   </style>
   <script src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js" crossorigin></script>
   <script src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin></script>
@@ -384,7 +401,7 @@ function reportCloudError(e) {
 // ─── PERSISTENZ (localStorage) ───────────────────────────────────────────────
 const LS_PREFIX  = "marktplan:";
 const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
-const APP_BUILD  = "20260702-12"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
+const APP_BUILD  = "20260702-13"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
 
 function clearAllPersistedState() {
   try {
@@ -2656,6 +2673,40 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
               );
               })}
           </div>
+          <button className="btn-pdf" onClick={() => window.print()}>📄 Plan als PDF exportieren</button>
+
+          {/* Nur für den Druck sichtbar (siehe @media print) — eigenes, aufräumtes Layout statt des interaktiven Plans */}
+          <div id="print-plan">
+            <h1>Schichtplan — {market?.name}</h1>
+            <div className="pp-sub">KW {getKW(weekStart)} · {fmtShort(weekDates[0])}–{fmtShort(weekDates[6])} {weekDates[0].getFullYear()}</div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Mitarbeiter</th>
+                  {weekDates.map((d, i) => <th key={i}>{DAY_NAMES[i]} {fmtShort(d)}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {mktEmps.map(emp => (
+                  <tr key={emp.id}>
+                    <td>{emp.name}</td>
+                    {weekDates.map((d, i) => {
+                      const sh = shiftMap[`${emp.id}:${fmtISO(d)}`];
+                      if (!sh) return <td key={i}>–</td>;
+                      const shRoles = sh.roles ?? (sh.role ? [sh.role] : []);
+                      return (
+                        <td key={i}>
+                          {sh.startTime}–{sh.endTime}
+                          {shRoles.length > 0 && <div>{shRoles.map(r => <span key={r} className="pp-role">{r}</span>)}</div>}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
           <div className="legend">
             <span><span className="legend-dot dot-av" />Verfügbar — klicken zum Einplanen / Zeiten anpassen</span>
             <span><span className="legend-dot dot-sh" />Geplant — klicken zum Bearbeiten oder Löschen</span>
