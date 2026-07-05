@@ -384,7 +384,7 @@ function reportCloudError(e) {
 // ─── PERSISTENZ (localStorage) ───────────────────────────────────────────────
 const LS_PREFIX  = "marktplan:";
 const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
-const APP_BUILD  = "20260702-8"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
+const APP_BUILD  = "20260702-9"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
 
 function clearAllPersistedState() {
   try {
@@ -478,7 +478,10 @@ function usePersistedState(key, initial) {
           skipWrite.current = true;
           setVal(cur => {
             let next = remote;
-            if (firstSync && dirtyPreSync.current) {
+            // Bei Passwort-Daten gewinnt IMMER die Cloud — lokale/veraltete Werte
+            // dürfen echte Passwörter nie überschreiben.
+            const remoteWins = key === "adminPwHash" || key === "managerCreds";
+            if (firstSync && dirtyPreSync.current && !remoteWins) {
               next = mergeLocalIntoRemote(remote, cur);
               dirtyPreSync.current = false;
               if (JSON.stringify(next) !== JSON.stringify(remote)) {
@@ -772,6 +775,9 @@ function App() {
   }, []);
 
   // Einmalige Migration: alte Klartext-Passwörter (Seed-Daten, ältere Speicherstände) → SHA-256-Hash
+  // Migration Klartext → Hash. WICHTIG: läuft nur über ECHTE gespeicherte Daten,
+  // nie über die eingebauten Defaults (managerCreds == null). Sonst überschreibt
+  // jedes frisch geladene Gerät nach einem Update alle Markt-Passwörter mit "1234".
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -786,17 +792,16 @@ function App() {
         }));
         if (!cancelled) setEmployees(migrated);
       }
-      const creds = managerCreds ?? DEFAULT_MANAGER_CREDS;
-      if (Object.values(creds).some(v => !isHashed(v))) {
+      if (managerCreds && Object.values(managerCreds).some(v => !isHashed(v))) {
         const migrated = {};
-        for (const [mId, v] of Object.entries(creds)) {
+        for (const [mId, v] of Object.entries(managerCreds)) {
           migrated[mId] = isHashed(v) ? v : await hashPw(v, "mgr-" + mId);
         }
         if (!cancelled) setManagerCreds(migrated);
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [employees, managerCreds]);
 
   // Migration: Feiertags-Ausnahmen, die vor dem Zeitzonen-Fix erzeugt wurden,
   // liegen einen Tag zu früh (bewegliche Feiertage über UTC berechnet).
