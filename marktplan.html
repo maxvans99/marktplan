@@ -401,7 +401,7 @@ function reportCloudError(e) {
 // ─── PERSISTENZ (localStorage) ───────────────────────────────────────────────
 const LS_PREFIX  = "marktplan:";
 const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
-const APP_BUILD  = "20260702-13"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
+const APP_BUILD  = "20260706-1"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
 
 function clearAllPersistedState() {
   try {
@@ -2665,7 +2665,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                           : prop ? renderShiftBlock(prop, true)
                           : av
                           ? <div className="bl av" onClick={() => openCell(emp, ds)}><span className="bl-time">{av.startTime}–{av.endTime}</span><span className="bl-tag">Verfügbar</span></div>
-                          : <div className="bl mt">–</div>}
+                          : <div className="bl mt" title="Klicken zum Einplanen (keine Verfügbarkeit eingetragen)" onClick={() => openCell(emp, ds)} style={{ cursor: "pointer" }}>+</div>}
                       </div>
                     );
                   })}
