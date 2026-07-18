@@ -401,7 +401,7 @@ function reportCloudError(e) {
 // ─── PERSISTENZ (localStorage) ───────────────────────────────────────────────
 const LS_PREFIX  = "marktplan:";
 const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
-const APP_BUILD  = "20260706-1"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
+const APP_BUILD  = "20260706-2"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
 
 function clearAllPersistedState() {
   try {
@@ -723,13 +723,14 @@ function App() {
   const [marketId, setMarketId] = useState(null);
   const [myEmployeeId, setMyEmployeeId] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [forceMgrPw, setForceMgrPw] = useState(false);
   const [employees, setEmployees] = usePersistedState("employees", SEED_EMP);
   const [availability, setAvailability] = usePersistedState("availability", () => [...mkSeedAvail(), ...mkKW28Avail()]);
   const [shifts, setShifts] = usePersistedState("shifts", mkKW28Shifts);
   const [weekStart, setWeekStart] = useState(getMonday(new Date()));
   const weekDates = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
 
-  function handleLogin({ role, marketId: mId, employeeId }) {
+  function handleLogin({ role, marketId: mId, employeeId, forcePwChange }) {
     if (role === "admin") {
       setIsAdmin(true);
       setMarketId(1);
@@ -743,6 +744,7 @@ function App() {
     } else {
       setIsAdmin(false);
       setMarketId(mId);
+      setForceMgrPw(!!forcePwChange);
       setPage("manager");
     }
   }
@@ -753,7 +755,7 @@ function App() {
     setPage("employee");
   }
 
-  function handleLogout() { setPage("login"); setMarketId(null); setMyEmployeeId(null); setIsAdmin(false); }
+  function handleLogout() { setPage("login"); setMarketId(null); setMyEmployeeId(null); setIsAdmin(false); setForceMgrPw(false); }
 
   const saveAvailability = (empId, avails) => {
     setAvailability(prev => {
@@ -927,6 +929,16 @@ function App() {
 
   const mktRolesConfig = extractRolesConfig(rolesConfig[marketId]);
 
+  if (forceMgrPw) {
+    return (
+      <ForceManagerPwModal marketId={marketId} onSave={async pw => {
+        const h = await hashPw(pw, "mgr-" + marketId);
+        setManagerCreds(prev => ({ ...(prev ?? DEFAULT_MANAGER_CREDS), [marketId]: h }));
+        setForceMgrPw(false);
+      }} />
+    );
+  }
+
   return (
     <ManagerView {...common} marketId={marketId} onMarketChange={isAdmin ? setMarketId : null} isAdmin={isAdmin}
       deadlineDaysByMarket={deadlineDaysByMarket} onUpdateDeadlineDaysByMarket={setDeadlineDaysByMarket}
@@ -1015,7 +1027,7 @@ function LoginScreen({ employees, onLogin, managerCreds, adminPwHash, onSetAdmin
         ? stored === await hashPw(password, "mgr-" + marketId)
         : (stored === password && stored === "1234"); // nur Default-PW als Klartext erlaubt
       if (!ok) { setError("Falsches Passwort."); return; }
-      onLogin({ role: "manager", marketId: parseInt(marketId) });
+      onLogin({ role: "manager", marketId: parseInt(marketId), forcePwChange: password === "1234" });
     } else {
       const emp = employees.find(e => e.id === parseInt(employeeId));
       const ok = emp && emp.passwordHash && emp.passwordHash === await hashPw(password, String(emp.id));
@@ -1137,6 +1149,52 @@ function SetPasswordView({ name, onSave }) {
         </div>
         {error && <div className="auth-error">{error}</div>}
         <button className="btn-primary" disabled={!pw1 || !pw2} onClick={handleSave}>Passwort speichern & einloggen</button>
+      </div>
+    </div>
+  );
+}
+
+// ─── ERZWUNGENER PASSWORTWECHSEL (Marktleitung mit Standard-PW "1234") ───────
+// Bewusst ohne Abbrechen-Button und ohne Overlay-Klick-Schließen: die Anmeldung
+// mit dem unsicheren Default-Passwort darf nicht ohne Änderung übersprungen werden.
+function ForceManagerPwModal({ marketId, onSave }) {
+  const [pw1, setPw1] = useState("");
+  const [pw2, setPw2] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function handleSave() {
+    if (pw1.length < 8) { setError("Mindestens 8 Zeichen erforderlich."); return; }
+    if (pw1 !== pw2) { setError("Passwörter stimmen nicht überein."); return; }
+    setSaving(true);
+    await onSave(pw1);
+  }
+
+  const market = MARKETS.find(m => m.id === marketId);
+
+  return (
+    <div className="login">
+      <div className="login-card">
+        <div className="eyebrow" style={{ color: "#DC2626" }}>⚠️ Sicherheitshinweis</div>
+        <div className="login-title">Bitte jetzt ein eigenes Passwort festlegen</div>
+        <div className="login-sub">
+          {market?.name ? `Der Markt „${market.name}" nutzt` : "Dieser Markt nutzt"} noch das Standard-Passwort „1234". Aus Sicherheitsgründen muss jetzt ein persönliches Passwort vergeben werden, bevor es weitergeht.
+        </div>
+        <div className="field">
+          <label>Neues Passwort</label>
+          <input type="password" placeholder="Mindestens 8 Zeichen" value={pw1} autoFocus
+            onChange={e => { setPw1(e.target.value); setError(""); }} />
+        </div>
+        <div className="field">
+          <label>Passwort wiederholen</label>
+          <input type="password" placeholder="Bestätigen" value={pw2}
+            onChange={e => { setPw2(e.target.value); setError(""); }}
+            onKeyDown={e => e.key === "Enter" && pw1 && pw2 && handleSave()} />
+        </div>
+        {error && <div className="auth-error">{error}</div>}
+        <button className="btn-primary" disabled={!pw1 || !pw2 || saving} onClick={handleSave}>
+          {saving ? "Speichert…" : "Passwort festlegen & weiter"}
+        </button>
       </div>
     </div>
   );
@@ -2359,6 +2417,16 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
             <button className="btn-logout-top" onClick={onLogout}>← Abmelden</button>
           </div>
         </div>
+
+        {!CLOUD_ENABLED && (
+          <div className="alert-w" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+            <span>⚠️ Kein Cloud-Sync aktiv — Daten liegen nur in diesem Browser. Regelmäßig Backup exportieren.</span>
+            {onDownloadBackup && (
+              <button className="btn-logout-top" style={{ background: "#fff", color: "#92400E", border: "1.5px solid #FDE68A", flexShrink: 0 }}
+                onClick={() => { onDownloadBackup(); flash("✓ Backup heruntergeladen"); }}>💾 Backup exportieren</button>
+            )}
+          </div>
+        )}
 
         {!marketId ? (
           <div className="alert-w">Bitte links einen Markt auswählen.</div>
