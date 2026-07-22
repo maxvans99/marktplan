@@ -401,7 +401,7 @@ function reportCloudError(e) {
 // ─── PERSISTENZ (localStorage) ───────────────────────────────────────────────
 const LS_PREFIX  = "marktplan:";
 const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
-const APP_BUILD  = "20260706-2"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
+const APP_BUILD  = "20260706-3"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
 
 function clearAllPersistedState() {
   try {
@@ -410,11 +410,14 @@ function clearAllPersistedState() {
   } catch {}
 }
 
-// Auto-Reload + Daten-Reset: Bei neuem Build alle Daten löschen und neu laden
+// Auto-Reload bei neuem Build. WICHTIG: löscht NICHT mehr den lokalen Speicher —
+// das Löschen erzeugte nach jedem Deploy ein Zeitfenster mit leerem lokalem
+// Zustand, bevor die Cloud-Daten zurücksynchronisiert waren. Genau in diesem
+// Fenster konnte es zu echtem Datenverlust kommen (Mitarbeiter/Schichten leer).
+// Die Cloud-Sync-Logik verträgt sich mit vorhandenen alten lokalen Daten (Merge).
 (function() {
   try {
     if (localStorage.getItem(LS_PREFIX + "build") !== APP_BUILD) {
-      clearAllPersistedState();
       localStorage.setItem(LS_PREFIX + "build", APP_BUILD);
       location.reload();
     }
@@ -526,12 +529,23 @@ function usePersistedState(key, initial) {
     try { localStorage.setItem(LS_PREFIX + key, JSON.stringify(val)); } catch {}
     if (!CLOUD_ENABLED) return;
     if (!cloudReady.current) { dirtyPreSync.current = true; return; }
-    // Schutz: vorhandene Cloud-Daten nie mit leeren Daten überschreiben
-    if (remoteHadData.current && isEmptyData(val)) {
-      console.warn("Cloud-Schreibschutz:", key, "— leerer Wert wird nicht über vorhandene Daten geschrieben.");
+    const ref = db.collection("marktplan").doc(key);
+    if (isEmptyData(val)) {
+      // Leerer Wert: NIE blind schreiben. Erst live (nicht aus dem In-Memory-
+      // Zustand, der bei jedem Reload zurückgesetzt wird) prüfen, ob die Cloud
+      // gerade echte Daten hat — nur dann darf überhaupt geschrieben werden,
+      // wenn dort ebenfalls schon leer war (z. B. neu angelegter Markt).
+      ref.get().then(snap => {
+        const remoteEmpty = !snap.exists || isEmptyData(snap.data().data);
+        if (!remoteEmpty) {
+          console.warn("Cloud-Schreibschutz:", key, "— leerer Wert wird nicht über vorhandene Daten geschrieben.");
+          return;
+        }
+        ref.set({ data: val }).catch(e => reportCloudError(e));
+      }).catch(e => { reportCloudError(e); console.warn("Cloud-Schreibschutz:", key, "— Live-Prüfung fehlgeschlagen, Schreiben abgebrochen."); });
       return;
     }
-    try { db.collection("marktplan").doc(key).set({ data: val }).catch(e => reportCloudError(e)); } catch (e) { reportCloudError(e); }
+    try { ref.set({ data: val }).catch(e => reportCloudError(e)); } catch (e) { reportCloudError(e); }
     if (!isEmptyData(val)) remoteHadData.current = true;
   }, [key, val]);
 
