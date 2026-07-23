@@ -401,7 +401,7 @@ function reportCloudError(e) {
 // ─── PERSISTENZ (localStorage) ───────────────────────────────────────────────
 const LS_PREFIX  = "marktplan:";
 const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
-const APP_BUILD  = "20260722-1"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
+const APP_BUILD  = "20260722-2"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
 
 function clearAllPersistedState() {
   try {
@@ -504,6 +504,8 @@ function usePersistedState(key, initial) {
             if (firstSync && dirtyPreSync.current && !remoteWins) {
               next = mergeLocalIntoRemote(remote, cur);
               dirtyPreSync.current = false;
+              // "undefined"-Felder entfernen, bevor es zurück in die Cloud geht (siehe Schreib-Effekt weiter unten)
+              try { next = JSON.parse(JSON.stringify(next)); } catch {}
               if (JSON.stringify(next) !== JSON.stringify(remote)) {
                 ref.set({ data: next }).catch(e => reportCloudError(e));
               }
@@ -516,7 +518,12 @@ function usePersistedState(key, initial) {
           // Dokument fehlt → mit aktuellem lokalen Wert anlegen
           cloudReady.current = true;
           dirtyPreSync.current = false;
-          setVal(cur => { ref.set({ data: cur }).catch(e => reportCloudError(e)); return cur; });
+          setVal(cur => {
+            let clean = cur;
+            try { clean = JSON.parse(JSON.stringify(cur)); } catch {}
+            ref.set({ data: clean }).catch(e => reportCloudError(e));
+            return cur;
+          });
         }
       }, err => { console.warn("Snapshot", key, err); reportCloudError(err); });
     });
@@ -526,11 +533,17 @@ function usePersistedState(key, initial) {
   // Schreiben (localStorage immer, Cloud erst nach erstem Snapshot)
   useEffect(() => {
     if (skipWrite.current) { skipWrite.current = false; return; }
-    try { localStorage.setItem(LS_PREFIX + key, JSON.stringify(val)); } catch {}
+    // Über JSON hin- und herwandeln entfernt alle "undefined"-Felder (Firestore
+    // lehnt "undefined" komplett ab und verweigert dann den GANZEN Schreibvorgang
+    // — betraf zuvor u.a. Passwort-Erstlogin und Rollen-Speichern). Gleichzeitig
+    // ist das exakt derselbe Wert, der ohnehin schon in localStorage landet.
+    let cleanVal;
+    try { cleanVal = JSON.parse(JSON.stringify(val)); } catch { cleanVal = val; }
+    try { localStorage.setItem(LS_PREFIX + key, JSON.stringify(cleanVal)); } catch {}
     if (!CLOUD_ENABLED) return;
     if (!cloudReady.current) { dirtyPreSync.current = true; return; }
     const ref = db.collection("marktplan").doc(key);
-    if (isEmptyData(val)) {
+    if (isEmptyData(cleanVal)) {
       // Leerer Wert: NIE blind schreiben. Erst live (nicht aus dem In-Memory-
       // Zustand, der bei jedem Reload zurückgesetzt wird) prüfen, ob die Cloud
       // gerade echte Daten hat — nur dann darf überhaupt geschrieben werden,
@@ -541,12 +554,12 @@ function usePersistedState(key, initial) {
           console.warn("Cloud-Schreibschutz:", key, "— leerer Wert wird nicht über vorhandene Daten geschrieben.");
           return;
         }
-        ref.set({ data: val }).catch(e => reportCloudError(e));
+        ref.set({ data: cleanVal }).catch(e => reportCloudError(e));
       }).catch(e => { reportCloudError(e); console.warn("Cloud-Schreibschutz:", key, "— Live-Prüfung fehlgeschlagen, Schreiben abgebrochen."); });
       return;
     }
-    try { ref.set({ data: val }).catch(e => reportCloudError(e)); } catch (e) { reportCloudError(e); }
-    if (!isEmptyData(val)) remoteHadData.current = true;
+    try { ref.set({ data: cleanVal }).catch(e => reportCloudError(e)); } catch (e) { reportCloudError(e); }
+    if (!isEmptyData(cleanVal)) remoteHadData.current = true;
   }, [key, val]);
 
   return [val, setVal];
@@ -765,7 +778,11 @@ function App() {
 
   async function handleSetPassword(newPw) {
     const passwordHash = await hashPw(newPw, String(myEmployeeId));
-    setEmployees(p => p.map(e => e.id === myEmployeeId ? { ...e, passwordHash, password: undefined, mustChangePw: false } : e));
+    setEmployees(p => p.map(e => {
+      if (e.id !== myEmployeeId) return e;
+      const { password: _old, ...base } = e;
+      return { ...base, passwordHash, mustChangePw: false };
+    }));
     setPage("employee");
   }
 
@@ -1840,7 +1857,7 @@ function DeliveryModal({ config, onSave, onClose }) {
 
 // ─── ROLLEN MODAL ────────────────────────────────────────────────────────────
 function RolesModal({ roles, thresholds: initThresholds, marketHours: initMh, onSave, onClose }) {
-  const [list, setList] = useState(roles.map(r => ({ targetHours: {}, dayOverrides: {}, ...r, minStaff: undefined })));
+  const [list, setList] = useState(roles.map(r => { const { minStaff, ...rest } = r; return { targetHours: {}, dayOverrides: {}, ...rest }; }));
   const [newName, setNewName] = useState("");
   const [thr, setThr] = useState(initThresholds ?? { ...DEFAULT_THRESHOLDS });
   const [mh, setMh] = useState(initMh ?? { ...DEFAULT_MARKET_HOURS });
