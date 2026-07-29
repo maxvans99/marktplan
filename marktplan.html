@@ -401,7 +401,7 @@ function reportCloudError(e) {
 // ─── PERSISTENZ (localStorage) ───────────────────────────────────────────────
 const LS_PREFIX  = "marktplan:";
 const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
-const APP_BUILD  = "20260722-5"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
+const APP_BUILD  = "20260722-6"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
 
 function clearAllPersistedState() {
   try {
@@ -2451,13 +2451,15 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
   }
 
   function openCell(emp, ds) {
-    const av = availMap[`${emp.id}:${ds}`];
+    const absence = absenceMap[`${emp.id}:${ds}`];
+    // Abwesenheit hat Vorrang — eine evtl. veraltete Verfügbarkeit darf hier nicht mehr vorbefüllen.
+    const av = absence ? null : availMap[`${emp.id}:${ds}`];
     const sh = shiftMap[`${emp.id}:${ds}`];
     setShiftStart(sh?.startTime ?? av?.startTime ?? "08:00");
     setShiftEnd(sh?.endTime ?? av?.endTime ?? "16:00");
     setShiftRoles(sh ? (sh.roles ?? (sh.role ? [sh.role] : [])) : []);
     setTimeErr("");
-    setModal({ emp, date: ds, av, sh });
+    setModal({ emp, date: ds, av, sh, absence });
   }
 
   function toggleRole(name) {
@@ -3172,6 +3174,14 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-t">{modal.sh ? "Schicht bearbeiten" : "Schicht einplanen"}</div>
             <div className="modal-s">{modal.emp.name} · {modal.date}</div>
+            {modal.absence && (
+              <div className="minfo" style={{ marginBottom: 14, background: "#FEF2F2" }}>
+                <div className="minfo-r">
+                  <span className="k">🚫 Abwesenheit gemeldet</span>
+                  <span className="v" style={{ color: "#DC2626" }}>{modal.absence.note || "(kein Grund angegeben)"}</span>
+                </div>
+              </div>
+            )}
             {modal.av && (
               <div className="minfo" style={{ marginBottom: 14 }}>
                 <div className="minfo-r">
