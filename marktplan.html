@@ -401,7 +401,7 @@ function reportCloudError(e) {
 // ─── PERSISTENZ (localStorage) ───────────────────────────────────────────────
 const LS_PREFIX  = "marktplan:";
 const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
-const APP_BUILD  = "20260722-4"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
+const APP_BUILD  = "20260722-5"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
 
 function clearAllPersistedState() {
   try {
@@ -2634,10 +2634,12 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                     [...shifts, ...newShifts].filter(s => s.date === ds && mktEmpIdSet.has(s.employeeId)).map(s => s.employeeId)
                   );
 
-                  const realAvailToday = availability
-                    .filter(a => a.date === ds && mktEmpIdSet.has(a.employeeId) && !alreadyPlanned.has(a.employeeId));
-                  const realAvailEmpIds = new Set(realAvailToday.map(a => a.employeeId));
                   const absentTodayIds = new Set((absences ?? []).filter(ab => ab.date === ds).map(ab => ab.employeeId));
+                  // Abwesenheit hat Vorrang — auch eine (evtl. veraltete) echte Verfügbarkeit
+                  // darf jemanden mit gemeldeter Abwesenheit nicht einplanbar machen.
+                  const realAvailToday = availability
+                    .filter(a => a.date === ds && mktEmpIdSet.has(a.employeeId) && !alreadyPlanned.has(a.employeeId) && !absentTodayIds.has(a.employeeId));
+                  const realAvailEmpIds = new Set(realAvailToday.map(a => a.employeeId));
                   // Festangestellte tragen keine Verfügbarkeit ein — gelten für den Auto-Plan
                   // automatisch als verfügbar (Marktzeiten), außer sie haben eine Abwesenheit.
                   const festSynthetic = mktEmps
@@ -2806,10 +2808,12 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                   </div>
                   {weekDates.map((d, i) => {
                     const ds = fmtISO(d);
-                    const av = availMap[`${emp.id}:${ds}`];
                     const sh = shiftMap[`${emp.id}:${ds}`];
                     const prop = !sh ? proposalMap[`${emp.id}:${ds}`] : null;
+                    // Abwesenheit hat Vorrang vor einer (evtl. veralteten) Verfügbarkeit —
+                    // sonst überdeckt ein alter Verfügbarkeits-Eintrag die gemeldete Abwesenheit.
                     const absence = !sh ? absenceMap[`${emp.id}:${ds}`] : null;
+                    const av = !sh && !absence ? availMap[`${emp.id}:${ds}`] : null;
 
                     const renderShiftBlock = (s, isProposal) => {
                       const shRoles = s.roles ?? (s.role ? [s.role] : []);
