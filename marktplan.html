@@ -401,7 +401,7 @@ function reportCloudError(e) {
 // ─── PERSISTENZ (localStorage) ───────────────────────────────────────────────
 const LS_PREFIX  = "marktplan:";
 const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
-const APP_BUILD  = "20260722-2"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
+const APP_BUILD  = "20260722-4"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
 
 function clearAllPersistedState() {
   try {
@@ -754,6 +754,9 @@ function App() {
   const [employees, setEmployees] = usePersistedState("employees", SEED_EMP);
   const [availability, setAvailability] = usePersistedState("availability", () => [...mkSeedAvail(), ...mkKW28Avail()]);
   const [shifts, setShifts] = usePersistedState("shifts", mkKW28Shifts);
+  // Abwesenheiten (Urlaub/Krank/Sonstiges) für Festangestellte — Ersatz für
+  // Verfügbarkeits-Eintragung bei Mitarbeitern mit fixem Plan.
+  const [absences, setAbsences] = usePersistedState("absences", []);
   const [weekStart, setWeekStart] = useState(getMonday(new Date()));
   const weekDates = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
 
@@ -795,7 +798,12 @@ function App() {
     });
   };
 
-  const common = { employees, availability, shifts, weekStart, weekDates, onWeekChange: setWeekStart, onLogout: handleLogout };
+  // Ersetzt die Abwesenheits-Einträge eines Mitarbeiters für die übergebenen Tage (wochenweise, wie bei saveAvailability).
+  const saveAbsences = (empId, ws, entries) => {
+    setAbsences(prev => [...prev.filter(a => !(a.employeeId === empId && ws.includes(a.date))), ...entries]);
+  };
+
+  const common = { employees, availability, shifts, absences, weekStart, weekDates, onWeekChange: setWeekStart, onLogout: handleLogout };
   const [deliveryConfig, setDeliveryConfig] = usePersistedState("deliveryConfig", () =>
     Object.fromEntries(MARKETS.map(m => [m.id, defaultDelivery()]))
   );
@@ -822,6 +830,7 @@ function App() {
     };
     pruneOld(shifts, setShifts);
     pruneOld(availability, setAvailability);
+    pruneOld(absences, setAbsences);
   }, []);
 
   // Einmalige Migration: alte Klartext-Passwörter (Seed-Daten, ältere Speicherstände) → SHA-256-Hash
@@ -919,6 +928,7 @@ function App() {
         employees: SEED_EMP,
         availability: [],
         shifts: [],
+        absences: [],
         deliveryConfig: Object.fromEntries(MARKETS.map(m => [m.id, defaultDelivery()])),
         rolesConfig: Object.fromEntries(MARKETS.map(m => [m.id, { roles: DEFAULT_ROLES.map(r => ({ ...r })), thresholds: { ...DEFAULT_THRESHOLDS } }])),
         managerCreds: { ...DEFAULT_MANAGER_CREDS },
@@ -946,6 +956,7 @@ function App() {
     return (
       <EmployeeView {...common} me={me} marketId={marketId} deadlineDays={deadlineDaysByMarket[marketId] ?? DEFAULT_DEADLINE_DAYS}
         onSave={avails => saveAvailability(myEmployeeId, avails)}
+        onSaveAbsences={entries => saveAbsences(myEmployeeId, weekDates.map(fmtISO), entries)}
         onChangePassword={async newPw => {
           const passwordHash = await hashPw(newPw, String(myEmployeeId));
           setEmployees(p => p.map(e => {
@@ -996,6 +1007,7 @@ function App() {
         setEmployees(p => p.filter(e => e.id !== empId));
         setAvailability(p => p.filter(a => a.employeeId !== empId));
         setShifts(p => p.filter(s => s.employeeId !== empId));
+        setAbsences(p => p.filter(a => a.employeeId !== empId));
       }}
       onImportAvailability={(empId, entries) => {
         const dates = entries.map(e => e.date);
@@ -1390,7 +1402,7 @@ function WeekNav({ weekStart, weekDates, onChange }) {
 }
 
 // ─── MITARBEITER-ANSICHT ──────────────────────────────────────────────────────
-function EmployeeView({ me, marketId, availability, shifts, weekStart, weekDates, onWeekChange, onSave, onChangePassword, onLogout, deadlineDays }) {
+function EmployeeView({ me, marketId, availability, shifts, absences, onSaveAbsences, weekStart, weekDates, onWeekChange, onSave, onChangePassword, onLogout, deadlineDays }) {
   const [sbOpen, setSbOpen] = useState(false);
   const [showPwModal, setShowPwModal] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -1419,6 +1431,25 @@ function EmployeeView({ me, marketId, availability, shifts, weekStart, weekDates
       startTime: form[fmtISO(d)].start, endTime: form[fmtISO(d)].end,
     }));
     onSave(avails); setSaved(true);
+  }
+
+  // Abwesenheits-Formular: wochenweise wie die Verfügbarkeit — pro Tag an/aus + freier Grund-Text.
+  const buildAbsForm = () => Object.fromEntries(weekDates.map(d => {
+    const a = (absences ?? []).find(x => x.employeeId === me?.id && x.date === fmtISO(d));
+    return [fmtISO(d), { on: !!a, note: a?.note ?? "" }];
+  }));
+  const [absForm, setAbsForm] = useState(buildAbsForm);
+  const [absSaved, setAbsSaved] = useState(null);
+  useEffect(() => { setAbsForm(buildAbsForm()); }, [weekStart, me?.id, absences, weekDates]);
+  useEffect(() => { setAbsSaved(null); }, [weekStart, me?.id]);
+
+  const setAbsDay = (ds, patch) => { setAbsForm(f => ({ ...f, [ds]: { ...f[ds], ...patch } })); setAbsSaved(false); };
+
+  function handleSaveAbsences() {
+    const entries = weekDates.filter(d => absForm[fmtISO(d)]?.on).map(d => ({
+      id: uid(), employeeId: me.id, date: fmtISO(d), note: absForm[fmtISO(d)].note?.trim() ?? "",
+    }));
+    onSaveAbsences(entries); setAbsSaved(true);
   }
 
   function handleChangePw() {
@@ -1481,6 +1512,37 @@ function EmployeeView({ me, marketId, availability, shifts, weekStart, weekDates
               })}
         </div>
 
+        {me?.isFestangestellt ? (
+          <>
+            <div className="sec-label" style={{ marginBottom: 10 }}>Abwesenheit eintragen</div>
+            <div className="avcard">
+              {weekDates.map((d, i) => {
+                const ds = fmtISO(d); const day = absForm[ds] || { on: false, note: "" };
+                return (
+                  <div key={ds} className="av-row">
+                    <div className="av-d">{DAY_NAMES[i]}</div>
+                    <div className="av-date">{fmtShort(d)}</div>
+                    <label className="toggle">
+                      <input type="checkbox" checked={day.on} onChange={e => setAbsDay(ds, { on: e.target.checked })} />
+                      <span className="t-track" />
+                    </label>
+                    {day.on
+                      ? <input type="text" placeholder="z. B. Urlaub, Arzttermin, Krank …" value={day.note}
+                          onChange={e => setAbsDay(ds, { note: e.target.value })}
+                          style={{ flex: 1, padding: "7px 10px", border: "1.5px solid #E2E8F0", borderRadius: 7, fontSize: 13, color: "#1E293B", outline: "none" }} />
+                      : <div className="av-none">Anwesend</div>}
+                  </div>
+                );
+              })}
+              <div className="save-bar">
+                <button className="btn-save" onClick={handleSaveAbsences}>Abwesenheit speichern</button>
+                {absSaved === true && <div className="saved">✓ Gespeichert</div>}
+                {absSaved === false && <div style={{ fontSize: 12, color: "#F59E0B", fontWeight: 600 }}>⚠ Nicht gespeichert</div>}
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
         <div className="sec-label" style={{ marginBottom: 10 }}>Meine Verfügbarkeit eintragen</div>
         {locked && (
           <div className="alert-w" style={{ marginBottom: 14 }}>
@@ -1518,6 +1580,8 @@ function EmployeeView({ me, marketId, availability, shifts, weekStart, weekDates
             {!locked && <div style={{ fontSize: 12, color: "#94A3B8" }}>Frist: {deadlineStr}, 23:59 Uhr</div>}
           </div>
         </div>
+          </>
+        )}
       </div>
 
       {showLogoutConfirm && (
@@ -2295,7 +2359,7 @@ function ZeitkontoModal({ emp, shifts, onClose }) {
   );
 }
 
-function ManagerView({ marketId, onMarketChange, isAdmin, employees, availability, shifts, weekStart, weekDates, onWeekChange, onAddShift, onDelShift, onAddEmployee, onDeleteEmployee, onUpdateEmployee, onImportAvailability, deliveryConfig, onUpdateDelivery, roles, thresholds, marketHours, onUpdateRoles, onUpdateMarketHours, onBulkAddShifts, onLogout, onResetData, managerCreds, onUpdateManagerCreds, deadlineDaysByMarket, onUpdateDeadlineDaysByMarket, onDownloadBackup }) {
+function ManagerView({ marketId, onMarketChange, isAdmin, employees, availability, shifts, absences, weekStart, weekDates, onWeekChange, onAddShift, onDelShift, onAddEmployee, onDeleteEmployee, onUpdateEmployee, onImportAvailability, deliveryConfig, onUpdateDelivery, roles, thresholds, marketHours, onUpdateRoles, onUpdateMarketHours, onBulkAddShifts, onLogout, onResetData, managerCreds, onUpdateManagerCreds, deadlineDaysByMarket, onUpdateDeadlineDaysByMarket, onDownloadBackup }) {
   const [sbOpen, setSbOpen] = useState(false);
   const [modal, setModal] = useState(null);
   const [delEmpModal, setDelEmpModal] = useState(null);
@@ -2336,6 +2400,10 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
     const m = {}; shifts.forEach(s => { m[`${s.employeeId}:${s.date}`] = s; }); return m;
   }, [shifts]);
 
+  const absenceMap = useMemo(() => {
+    const m = {}; (absences ?? []).forEach(a => { m[`${a.employeeId}:${a.date}`] = a; }); return m;
+  }, [absences]);
+
   const proposalMap = useMemo(() => {
     const m = {}; autoPlanProposal.forEach(s => { m[`${s.employeeId}:${s.date}`] = s; }); return m;
   }, [autoPlanProposal]);
@@ -2375,7 +2443,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
 
   function saveEditEmp() {
     if (!editEmp) return;
-    const changes = { weeklyHours: editEmp.weeklyHours ? parseInt(editEmp.weeklyHours) : null, defaultRoles: editEmp.defaultRoles ?? [], isMarktleiter: !!editEmp.isMarktleiter, isSchliessKraft: !!editEmp.isSchliessKraft };
+    const changes = { weeklyHours: editEmp.weeklyHours ? parseInt(editEmp.weeklyHours) : null, defaultRoles: editEmp.defaultRoles ?? [], isMarktleiter: !!editEmp.isMarktleiter, isSchliessKraft: !!editEmp.isSchliessKraft, isFestangestellt: !!editEmp.isFestangestellt };
     if (editEmp.newPassword?.trim()) { changes.password = editEmp.newPassword.trim(); changes.mustChangePw = true; }
     onUpdateEmployee(editEmp.id, changes);
     setEditEmp(null);
@@ -2566,8 +2634,17 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                     [...shifts, ...newShifts].filter(s => s.date === ds && mktEmpIdSet.has(s.employeeId)).map(s => s.employeeId)
                   );
 
-                  const dayAvail = availability
-                    .filter(a => a.date === ds && mktEmpIdSet.has(a.employeeId) && !alreadyPlanned.has(a.employeeId))
+                  const realAvailToday = availability
+                    .filter(a => a.date === ds && mktEmpIdSet.has(a.employeeId) && !alreadyPlanned.has(a.employeeId));
+                  const realAvailEmpIds = new Set(realAvailToday.map(a => a.employeeId));
+                  const absentTodayIds = new Set((absences ?? []).filter(ab => ab.date === ds).map(ab => ab.employeeId));
+                  // Festangestellte tragen keine Verfügbarkeit ein — gelten für den Auto-Plan
+                  // automatisch als verfügbar (Marktzeiten), außer sie haben eine Abwesenheit.
+                  const festSynthetic = mktEmps
+                    .filter(e => e.isFestangestellt && !realAvailEmpIds.has(e.id) && !absentTodayIds.has(e.id) && !alreadyPlanned.has(e.id))
+                    .map(e => ({ id: uid(), employeeId: e.id, date: ds, startTime: mh.open, endTime: mh.close }));
+
+                  const dayAvail = [...realAvailToday, ...festSynthetic]
                     .map(a => ({ a, emp: empById.get(a.employeeId) }))
                     .filter(x => x.emp && target(x.emp) - (planned[x.emp.id] ?? 0) > 0);
 
@@ -2710,7 +2787,8 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                 const istColor = !emp.weeklyHours ? "#64748B" : empIst >= emp.weeklyHours ? "#059669" : "#DC2626";
                 const hasAvailThisWeek = availability.some(a => a.employeeId === emp.id && weekStrs.includes(a.date));
                 const hasShiftThisWeek = shifts.some(s => s.employeeId === emp.id && weekStrs.includes(s.date));
-                const nothingEnteredThisWeek = !hasAvailThisWeek && !hasShiftThisWeek;
+                // Festangestellte tragen keine Verfügbarkeit ein — für sie ist "nichts eingetragen" der Normalfall, keine Warnung.
+                const nothingEnteredThisWeek = !emp.isFestangestellt && !hasAvailThisWeek && !hasShiftThisWeek;
                 return (
                 <div key={emp.id} className="grid-row">
                   <div className="gr-name">
@@ -2722,7 +2800,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                         {emp.isSchliessKraft && !emp.isMarktleiter && <span style={{ fontSize: 9, fontWeight: 800, background: "#0369A1", color: "#fff", borderRadius: 4, padding: "1px 5px", letterSpacing: ".04em" }}>SK</span>}
                         {nothingEnteredThisWeek && <span title="Keine Verfügbarkeit und keine Schicht für diese Woche eingetragen — manuell einplanen oder nachfragen." style={{ fontSize: 9, fontWeight: 800, background: "#FEF3C7", color: "#92400E", borderRadius: 4, padding: "1px 5px", letterSpacing: ".02em", cursor: "help" }}>⚠ Nichts eingetragen</span>}
                         <button className="btn-del-emp" title="Bearbeiten" style={{ background: "#EFF6FF", color: "#3B82F6", fontSize: 11, padding: "1px 5px", borderRadius: 4 }}
-                          onClick={() => setEditEmp({ id: emp.id, name: emp.name, weeklyHours: emp.weeklyHours ?? "", defaultRoles: emp.defaultRoles ?? [], isMarktleiter: emp.isMarktleiter, isSchliessKraft: emp.isSchliessKraft })}>✏️</button>
+                          onClick={() => setEditEmp({ id: emp.id, name: emp.name, weeklyHours: emp.weeklyHours ?? "", defaultRoles: emp.defaultRoles ?? [], isMarktleiter: emp.isMarktleiter, isSchliessKraft: emp.isSchliessKraft, isFestangestellt: emp.isFestangestellt })}>✏️</button>
                       </div>
                     </div>
                   </div>
@@ -2731,6 +2809,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                     const av = availMap[`${emp.id}:${ds}`];
                     const sh = shiftMap[`${emp.id}:${ds}`];
                     const prop = !sh ? proposalMap[`${emp.id}:${ds}`] : null;
+                    const absence = !sh ? absenceMap[`${emp.id}:${ds}`] : null;
 
                     const renderShiftBlock = (s, isProposal) => {
                       const shRoles = s.roles ?? (s.role ? [s.role] : []);
@@ -2768,6 +2847,11 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                           : prop ? renderShiftBlock(prop, true)
                           : av
                           ? <div className="bl av" onClick={() => openCell(emp, ds)}><span className="bl-time">{av.startTime}–{av.endTime}</span><span className="bl-tag">Verfügbar</span></div>
+                          : absence
+                          ? <div className="bl" title={absence.note ? `Abwesend: ${absence.note} — trotzdem einplanen möglich` : "Trotzdem einplanen möglich"} onClick={() => openCell(emp, ds)}
+                              style={{ background: "#F1F5F9", borderColor: "#CBD5E1", color: "#64748B", cursor: "pointer" }}>
+                              <span className="bl-tag">🚫 {absence.note || "Abwesend"}</span>
+                            </div>
                           : <div className="bl mt" title="Klicken zum Einplanen (keine Verfügbarkeit eingetragen)" onClick={() => openCell(emp, ds)} style={{ cursor: "pointer" }}>+</div>}
                       </div>
                     );
@@ -3294,6 +3378,15 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                 </label>
               </div>
             )}
+            <div className="field" style={{ marginBottom: 10 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", userSelect: "none" }}>
+                <input type="checkbox" checked={!!editEmp.isFestangestellt}
+                  onChange={e => setEditEmp(p => ({ ...p, isFestangestellt: e.target.checked }))}
+                  style={{ width: 16, height: 16, accentColor: "#7C3AED" }} />
+                <span style={{ fontWeight: 700, fontSize: 13, color: "#1E293B" }}>Festangestellt</span>
+                <span style={{ fontSize: 11, color: "#94A3B8" }}>(trägt nur Abwesenheiten ein, keine wöchentliche Verfügbarkeit)</span>
+              </label>
+            </div>
             <div className="field"><label>Wochenstunden-Soll</label>
               <input type="number" placeholder="z.B. 40" min="1" max="48" value={editEmp.weeklyHours}
                 onChange={e => setEditEmp(p => ({ ...p, weeklyHours: e.target.value }))} />
