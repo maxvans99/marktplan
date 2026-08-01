@@ -219,8 +219,8 @@
     /* Top bar */
     .mob-bar {
       display: flex; align-items: center; justify-content: space-between;
-      position: fixed; top: 0; left: 0; right: 0; height: 52px;
-      background: #0F172A; padding: 0 max(16px, env(safe-area-inset-right)); padding-left: max(16px, env(safe-area-inset-left)); z-index: 50;
+      position: fixed; top: 0; left: 0; right: 0; height: calc(52px + env(safe-area-inset-top));
+      background: #0F172A; padding: env(safe-area-inset-top) max(16px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left)); z-index: 50;
       border-bottom: 1px solid rgba(255,255,255,.08);
     }
     .burger { background: none; border: none; color: #fff; font-size: 22px; cursor: pointer; padding: 6px; line-height: 1; }
@@ -243,7 +243,7 @@
     .sb-logout-top:hover { background: #1E293B; color: #CBD5E1; }
 
     /* Main content below top bar + safe area */
-    .main { padding: 68px max(14px, env(safe-area-inset-right)) max(28px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left)); }
+    .main { padding: calc(68px + env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) max(28px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left)); }
 
     /* Login */
     .login { align-items: flex-start; padding: 12px; padding-top: 20px; }
@@ -465,7 +465,7 @@ function reportCloudError(e) {
 // ─── PERSISTENZ (localStorage) ───────────────────────────────────────────────
 const LS_PREFIX  = "marktplan:";
 const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
-const APP_BUILD  = "20260801-1"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
+const APP_BUILD  = "20260801-2"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
 
 function clearAllPersistedState() {
   try {
