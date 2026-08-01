@@ -465,7 +465,7 @@ function reportCloudError(e) {
 // ─── PERSISTENZ (localStorage) ───────────────────────────────────────────────
 const LS_PREFIX  = "marktplan:";
 const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
-const APP_BUILD  = "20260801-2"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
+const APP_BUILD  = "20260801-3"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
 
 function clearAllPersistedState() {
   try {
@@ -1557,7 +1557,15 @@ function EmployeeView({ me, marketId, availability, shifts, absences, onSaveAbse
       <div className="mob-bar">
         <button className="burger" onClick={() => setSbOpen(true)}>☰</button>
         <span className="mob-logo">Markt<b>Plan</b></span>
-        <button className="mob-logout" onClick={() => { if (saved === false) { setShowLogoutConfirm(true); } else { onLogout(); } }}>Abmelden</button>
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          {"Notification" in window && (
+            <button className="mob-logout" style={{ background: pushEnabled ? "#1E293B" : "#3B82F6" }}
+              onClick={() => { pushEnabled ? onDisablePush() : onEnablePush(); }}>
+              {pushEnabled ? "🔔" : "🔕"}
+            </button>
+          )}
+          <button className="mob-logout" onClick={() => { if (saved === false) { setShowLogoutConfirm(true); } else { onLogout(); } }}>Abmelden</button>
+        </div>
       </div>
       {sbOpen && <div className="sb-overlay" onClick={() => setSbOpen(false)} />}
       <Sidebar role="employee" marketId={marketId} onMarketChange={() => {}} onLogout={() => { if (saved === false) { setShowLogoutConfirm(true); setSbOpen(false); } else { onLogout(); } }}
