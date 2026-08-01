@@ -465,7 +465,7 @@ function reportCloudError(e) {
 // ─── PERSISTENZ (localStorage) ───────────────────────────────────────────────
 const LS_PREFIX  = "marktplan:";
 const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
-const APP_BUILD  = "20260801-4"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
+const APP_BUILD  = "20260801-5"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
 
 function clearAllPersistedState() {
   try {
@@ -1058,6 +1058,7 @@ function App() {
       <ForceManagerPwModal marketId={marketId} onSave={async pw => {
         const h = await hashPw(pw, "mgr-" + marketId);
         setManagerCreds(prev => ({ ...(prev ?? DEFAULT_MANAGER_CREDS), [marketId]: h }));
+        claimRole("manager", marketId, h);
         setForceMgrPw(false);
       }} />
     );
