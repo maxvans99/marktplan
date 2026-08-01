@@ -26,8 +26,10 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📋</text></svg>" />
-  <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%230F172A'/><text y='.85em' font-size='70' x='15'>📋</text></svg>" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+  <link rel="manifest" href="manifest.json" />
   <style>
 
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -391,6 +393,68 @@ if (CLOUD_ENABLED) {
   });
 }
 
+// Service Worker für Push-Benachrichtigungen (nur auf https/localhost, nicht bei file://)
+let swRegistration = null;
+if ("serviceWorker" in navigator && location.protocol !== "file:") {
+  navigator.serviceWorker.register("firebase-messaging-sw.js")
+    .then(reg => { swRegistration = reg; })
+    .catch(e => console.warn("Service-Worker-Registrierung fehlgeschlagen:", e));
+}
+
+// ─── PUSH-BENACHRICHTIGUNGEN ─────────────────────────────────────────────────
+const PUSH_WORKER_URL = "https://marktplan-push.marktplan-winkler.workers.dev";
+const PUSH_VAPID_KEY = "BOLbi-WsC-yBW47m-J5NIR-jrDhvTkunVBiuITdAIA95_mXQevuFg4RTAMP8T6Yxo-ozR5PClhBT1Eilh2MpxRE";
+
+// Setzt nach erfolgreicher Passwortprüfung (Marktleitung/Admin) ein fälschungssicheres
+// Custom Claim auf den anonymen Firebase-Auth-Account. Läuft im Hintergrund — schlägt
+// es fehl (z.B. Worker nicht erreichbar), bleibt der Login trotzdem nutzbar, nur der
+// Benachrichtigen-Button funktioniert dann später nicht.
+async function claimRole(role, marketId, passwordHash) {
+  if (!CLOUD_ENABLED) return;
+  try {
+    await authReady;
+    const uid = firebase.auth().currentUser?.uid;
+    if (!uid) return;
+    const res = await fetch(`${PUSH_WORKER_URL}/claim`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ uid, role, marketId: marketId ?? null, passwordHash }),
+    });
+    if (!res.ok) { console.warn("Claim fehlgeschlagen:", await res.text()); return; }
+    await firebase.auth().currentUser.getIdToken(true); // Claim ins Token übernehmen
+  } catch (e) {
+    console.warn("Claim-Fehler:", e);
+  }
+}
+
+// Fragt Push-Berechtigung an und liefert den Geräte-Token, oder null bei Ablehnung/Fehler.
+async function requestPushToken() {
+  if (!CLOUD_ENABLED || !("Notification" in window) || !swRegistration) return null;
+  try {
+    const perm = await Notification.requestPermission();
+    if (perm !== "granted") return null;
+    return await firebase.messaging().getToken({ vapidKey: PUSH_VAPID_KEY, serviceWorkerRegistration: swRegistration });
+  } catch (e) {
+    console.warn("Push-Token-Fehler:", e);
+    return null;
+  }
+}
+
+// Löst über den Worker Push-Benachrichtigungen für die übergebenen Mitarbeiter aus.
+// Erfordert ein gültiges Custom-Claim-Token (siehe claimRole) — die Marktleitung
+// muss sich also nach dem letzten Login mindestens einmal erfolgreich eingeloggt haben.
+async function notifyEmployees(marketId, employeeIds, title, body) {
+  const idToken = await firebase.auth().currentUser?.getIdToken();
+  if (!idToken) throw new Error("Kein Auth-Token vorhanden — bitte neu einloggen.");
+  const res = await fetch(`${PUSH_WORKER_URL}/notify`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+    body: JSON.stringify({ marketId, employeeIds, title, body }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
 // Cloud-Fehler sichtbar machen statt stumm zu verschlucken
 function reportCloudError(e) {
   const code = (e && e.code) || String(e);
@@ -401,7 +465,7 @@ function reportCloudError(e) {
 // ─── PERSISTENZ (localStorage) ───────────────────────────────────────────────
 const LS_PREFIX  = "marktplan:";
 const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
-const APP_BUILD  = "20260722-6"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
+const APP_BUILD  = "20260801-1"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
 
 function clearAllPersistedState() {
   try {
@@ -816,6 +880,21 @@ function App() {
   const [deadlineDaysByMarket, setDeadlineDaysByMarket] = usePersistedState("deadlineDays", () =>
     Object.fromEntries(MARKETS.map(m => [m.id, DEFAULT_DEADLINE_DAYS]))
   );
+  // Push-Geräte-Tokens: viele-zu-eins möglich (ein Gerät kann mehreren Mitarbeitern
+  // zugeordnet sein, z.B. Familien-Handy) — siehe {employeeId, token, marketId}.
+  const [pushTokens, setPushTokens] = usePersistedState("pushTokens", []);
+  async function enablePushForEmployee(employeeId, marketId) {
+    const token = await requestPushToken();
+    if (!token) return false;
+    setPushTokens(prev => {
+      const exists = prev.some(t => t.employeeId === employeeId && t.token === token);
+      return exists ? prev : [...prev, { employeeId, token, marketId }];
+    });
+    return true;
+  }
+  function disablePushForEmployee(employeeId) {
+    setPushTokens(prev => prev.filter(t => t.employeeId !== employeeId));
+  }
 
   useEffect(() => { try { localStorage.setItem(LS_PREFIX + "version", LS_VERSION); } catch {} }, []);
 
@@ -955,6 +1034,9 @@ function App() {
     const me = employees.find(e => e.id === myEmployeeId);
     return (
       <EmployeeView {...common} me={me} marketId={marketId} deadlineDays={deadlineDaysByMarket[marketId] ?? DEFAULT_DEADLINE_DAYS}
+        pushEnabled={pushTokens.some(t => t.employeeId === myEmployeeId)}
+        onEnablePush={() => enablePushForEmployee(myEmployeeId, marketId)}
+        onDisablePush={() => disablePushForEmployee(myEmployeeId)}
         onSave={avails => saveAvailability(myEmployeeId, avails)}
         onSaveAbsences={entries => saveAbsences(myEmployeeId, weekDates.map(fmtISO), entries)}
         onChangePassword={async newPw => {
@@ -984,6 +1066,7 @@ function App() {
   return (
     <ManagerView {...common} marketId={marketId} onMarketChange={isAdmin ? setMarketId : null} isAdmin={isAdmin}
       deadlineDaysByMarket={deadlineDaysByMarket} onUpdateDeadlineDaysByMarket={setDeadlineDaysByMarket}
+      onNotifyEmployees={(empIds) => notifyEmployees(marketId, empIds)}
       onAddShift={s => setShifts(p => [...p, { ...s, id: uid() }])}
       onDelShift={id => setShifts(p => p.filter(s => s.id !== id))}
       onAddEmployee={async (name, pw, wh, defRoles) => {
@@ -1060,16 +1143,20 @@ function LoginScreen({ employees, onLogin, managerCreds, adminPwHash, onSetAdmin
         onLogin({ role: "admin" });
         return;
       }
-      const ok = adminPwHash === await hashPw(password, "admin");
+      const adminHash = await hashPw(password, "admin");
+      const ok = adminPwHash === adminHash;
       if (!ok) { setError("Falsches Passwort."); return; }
+      claimRole("admin", null, adminHash);
       onLogin({ role: "admin" });
     } else if (role === "manager") {
       const stored = (managerCreds ?? DEFAULT_MANAGER_CREDS)[parseInt(marketId)];
+      const mgrHash = await hashPw(password, "mgr-" + marketId);
       // Klartext-Fallback nur noch für Erst-Login mit 1234 (Migration) – danach nur noch Hashes
       const ok = isHashed(stored)
-        ? stored === await hashPw(password, "mgr-" + marketId)
+        ? stored === mgrHash
         : (stored === password && stored === "1234"); // nur Default-PW als Klartext erlaubt
       if (!ok) { setError("Falsches Passwort."); return; }
+      if (isHashed(stored)) claimRole("manager", parseInt(marketId), mgrHash);
       onLogin({ role: "manager", marketId: parseInt(marketId), forcePwChange: password === "1234" });
     } else {
       const emp = employees.find(e => e.id === parseInt(employeeId));
@@ -1402,7 +1489,7 @@ function WeekNav({ weekStart, weekDates, onChange }) {
 }
 
 // ─── MITARBEITER-ANSICHT ──────────────────────────────────────────────────────
-function EmployeeView({ me, marketId, availability, shifts, absences, onSaveAbsences, weekStart, weekDates, onWeekChange, onSave, onChangePassword, onLogout, deadlineDays }) {
+function EmployeeView({ me, marketId, availability, shifts, absences, onSaveAbsences, weekStart, weekDates, onWeekChange, onSave, onChangePassword, onLogout, deadlineDays, pushEnabled, onEnablePush, onDisablePush }) {
   const [sbOpen, setSbOpen] = useState(false);
   const [showPwModal, setShowPwModal] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -1482,7 +1569,15 @@ function EmployeeView({ me, marketId, availability, shifts, absences, onSaveAbse
             <div className="ph-title">Mein Schichtplan</div>
             <div className="ph-sub">{me?.name} · {market?.name}</div>
           </div>
-          <button className="btn-logout-top" onClick={() => { if (saved === false) { setShowLogoutConfirm(true); } else { onLogout(); } }}>← Abmelden</button>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            {"Notification" in window && (
+              <button className="btn-logout-top" title={pushEnabled ? "Benachrichtigungen auf diesem Gerät deaktivieren" : "Benachrichtigt dich, wenn ein neuer Plan für dich veröffentlicht wird"}
+                onClick={() => { pushEnabled ? onDisablePush() : onEnablePush(); }}>
+                {pushEnabled ? "🔔 Benachrichtigungen an" : "🔕 Benachrichtigungen aktivieren"}
+              </button>
+            )}
+            <button className="btn-logout-top" onClick={() => { if (saved === false) { setShowLogoutConfirm(true); } else { onLogout(); } }}>← Abmelden</button>
+          </div>
         </div>
 
         <WeekNav weekStart={weekStart} weekDates={weekDates} onChange={onWeekChange} />
@@ -2359,7 +2454,22 @@ function ZeitkontoModal({ emp, shifts, onClose }) {
   );
 }
 
-function ManagerView({ marketId, onMarketChange, isAdmin, employees, availability, shifts, absences, weekStart, weekDates, onWeekChange, onAddShift, onDelShift, onAddEmployee, onDeleteEmployee, onUpdateEmployee, onImportAvailability, deliveryConfig, onUpdateDelivery, roles, thresholds, marketHours, onUpdateRoles, onUpdateMarketHours, onBulkAddShifts, onLogout, onResetData, managerCreds, onUpdateManagerCreds, deadlineDaysByMarket, onUpdateDeadlineDaysByMarket, onDownloadBackup }) {
+function ManagerView({ marketId, onMarketChange, isAdmin, employees, availability, shifts, absences, weekStart, weekDates, onWeekChange, onAddShift, onDelShift, onAddEmployee, onDeleteEmployee, onUpdateEmployee, onImportAvailability, deliveryConfig, onUpdateDelivery, roles, thresholds, marketHours, onUpdateRoles, onUpdateMarketHours, onBulkAddShifts, onLogout, onResetData, managerCreds, onUpdateManagerCreds, deadlineDaysByMarket, onUpdateDeadlineDaysByMarket, onDownloadBackup, onNotifyEmployees }) {
+  const [notifyState, setNotifyState] = useState("idle"); // idle | sending | done | error
+  async function handleNotify() {
+    const weekSet = new Set(weekDates.map(fmtISO));
+    const empIds = [...new Set(shifts.filter(s => weekSet.has(s.date) && employees.some(e => e.id === s.employeeId && e.marketId === marketId)).map(s => s.employeeId))];
+    if (empIds.length === 0) { setNotifyState("error"); setTimeout(() => setNotifyState("idle"), 3000); return; }
+    setNotifyState("sending");
+    try {
+      await onNotifyEmployees(empIds);
+      setNotifyState("done");
+    } catch (e) {
+      console.warn("Benachrichtigung fehlgeschlagen:", e);
+      setNotifyState("error");
+    }
+    setTimeout(() => setNotifyState("idle"), 3000);
+  }
   const [sbOpen, setSbOpen] = useState(false);
   const [modal, setModal] = useState(null);
   const [delEmpModal, setDelEmpModal] = useState(null);
@@ -2867,6 +2977,12 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
               })}
           </div>
           <button className="btn-pdf" onClick={() => window.print()}>📄 Plan als PDF exportieren</button>
+          <button className="btn-pdf" onClick={handleNotify} disabled={notifyState === "sending"}>
+            {notifyState === "sending" ? "⏳ Wird gesendet…"
+              : notifyState === "done" ? "✅ Mitarbeiter benachrichtigt"
+              : notifyState === "error" ? "⚠ Fehlgeschlagen — bitte neu einloggen und erneut versuchen"
+              : "🔔 Mitarbeiter über diesen Plan benachrichtigen"}
+          </button>
 
           {/* Nur für den Druck sichtbar (siehe @media print) — eigenes, aufräumtes Layout statt des interaktiven Plans */}
           <div id="print-plan">
