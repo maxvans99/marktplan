@@ -1,0 +1,25 @@
+// MarktPlan — Service Worker für Push-Benachrichtigungen im Hintergrund (Firebase Cloud Messaging).
+// Muss am Root der Seite liegen (gleiche Ebene wie marktplan.html), damit der Scope passt.
+
+importScripts("https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js");
+importScripts("https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js");
+
+firebase.initializeApp({
+  apiKey: "AIzaSyDszXWDqzquKJoF4pAN2dexqyv4aY4gTGQ",
+  authDomain: "marktplan-winkler.firebaseapp.com",
+  projectId: "marktplan-winkler",
+  storageBucket: "marktplan-winkler.firebasestorage.app",
+  messagingSenderId: "85624571703",
+  appId: "1:85624571703:web:4282281fc72386c628bcb2"
+});
+
+const messaging = firebase.messaging();
+
+messaging.onBackgroundMessage((payload) => {
+  const title = payload.notification?.title ?? "Neuer Schichtplan";
+  const body = payload.notification?.body ?? "";
+  self.registration.showNotification(title, {
+    body,
+    icon: "icon-192.png",
+  });
+});
