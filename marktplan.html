@@ -465,7 +465,7 @@ function reportCloudError(e) {
 // ─── PERSISTENZ (localStorage) ───────────────────────────────────────────────
 const LS_PREFIX  = "marktplan:";
 const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
-const APP_BUILD  = "20260801-5"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
+const APP_BUILD  = "20260801-6"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
 
 function clearAllPersistedState() {
   try {
@@ -2474,16 +2474,21 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
       setNotifyState("error"); setTimeout(() => setNotifyState("idle"), 6000); return;
     }
     setNotifyState("sending");
+    let debugClaims = "";
+    try {
+      const tokenResult = await firebase.auth().currentUser?.getIdTokenResult();
+      debugClaims = ` [Token-Claims: role=${tokenResult?.claims?.role ?? "—"}, marketId=${tokenResult?.claims?.marketId ?? "—"}, gesendet marketId=${marketId}]`;
+    } catch {}
     try {
       const result = await onNotifyEmployees(empIds);
-      setNotifyErrorMsg(JSON.stringify(result));
+      setNotifyErrorMsg(JSON.stringify(result) + debugClaims);
       setNotifyState("done");
     } catch (e) {
       console.warn("Benachrichtigung fehlgeschlagen:", e);
-      setNotifyErrorMsg(String(e.message || e));
+      setNotifyErrorMsg(String(e.message || e) + debugClaims);
       setNotifyState("error");
     }
-    setTimeout(() => setNotifyState("idle"), 8000);
+    setTimeout(() => setNotifyState("idle"), 15000);
   }
   const [sbOpen, setSbOpen] = useState(false);
   const [modal, setModal] = useState(null);
