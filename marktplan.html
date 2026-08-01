@@ -465,7 +465,7 @@ function reportCloudError(e) {
 // ─── PERSISTENZ (localStorage) ───────────────────────────────────────────────
 const LS_PREFIX  = "marktplan:";
 const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
-const APP_BUILD  = "20260801-3"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
+const APP_BUILD  = "20260801-4"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
 
 function clearAllPersistedState() {
   try {
@@ -2464,19 +2464,25 @@ function ZeitkontoModal({ emp, shifts, onClose }) {
 
 function ManagerView({ marketId, onMarketChange, isAdmin, employees, availability, shifts, absences, weekStart, weekDates, onWeekChange, onAddShift, onDelShift, onAddEmployee, onDeleteEmployee, onUpdateEmployee, onImportAvailability, deliveryConfig, onUpdateDelivery, roles, thresholds, marketHours, onUpdateRoles, onUpdateMarketHours, onBulkAddShifts, onLogout, onResetData, managerCreds, onUpdateManagerCreds, deadlineDaysByMarket, onUpdateDeadlineDaysByMarket, onDownloadBackup, onNotifyEmployees }) {
   const [notifyState, setNotifyState] = useState("idle"); // idle | sending | done | error
+  const [notifyErrorMsg, setNotifyErrorMsg] = useState("");
   async function handleNotify() {
     const weekSet = new Set(weekDates.map(fmtISO));
     const empIds = [...new Set(shifts.filter(s => weekSet.has(s.date) && employees.some(e => e.id === s.employeeId && e.marketId === marketId)).map(s => s.employeeId))];
-    if (empIds.length === 0) { setNotifyState("error"); setTimeout(() => setNotifyState("idle"), 3000); return; }
+    if (empIds.length === 0) {
+      setNotifyErrorMsg("Kein Mitarbeiter mit Schicht in dieser Woche gefunden.");
+      setNotifyState("error"); setTimeout(() => setNotifyState("idle"), 6000); return;
+    }
     setNotifyState("sending");
     try {
-      await onNotifyEmployees(empIds);
+      const result = await onNotifyEmployees(empIds);
+      setNotifyErrorMsg(JSON.stringify(result));
       setNotifyState("done");
     } catch (e) {
       console.warn("Benachrichtigung fehlgeschlagen:", e);
+      setNotifyErrorMsg(String(e.message || e));
       setNotifyState("error");
     }
-    setTimeout(() => setNotifyState("idle"), 3000);
+    setTimeout(() => setNotifyState("idle"), 8000);
   }
   const [sbOpen, setSbOpen] = useState(false);
   const [modal, setModal] = useState(null);
@@ -2988,9 +2994,14 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
           <button className="btn-pdf" onClick={handleNotify} disabled={notifyState === "sending"}>
             {notifyState === "sending" ? "⏳ Wird gesendet…"
               : notifyState === "done" ? "✅ Mitarbeiter benachrichtigt"
-              : notifyState === "error" ? "⚠ Fehlgeschlagen — bitte neu einloggen und erneut versuchen"
+              : notifyState === "error" ? "⚠ Fehlgeschlagen — bitte erneut versuchen"
               : "🔔 Mitarbeiter über diesen Plan benachrichtigen"}
           </button>
+          {(notifyState === "error" || notifyState === "done") && notifyErrorMsg && (
+            <div style={{ fontSize: 12, color: notifyState === "error" ? "#DC2626" : "#16A34A", marginTop: 6, wordBreak: "break-word" }}>
+              {notifyErrorMsg}
+            </div>
+          )}
 
           {/* Nur für den Druck sichtbar (siehe @media print) — eigenes, aufräumtes Layout statt des interaktiven Plans */}
           <div id="print-plan">
