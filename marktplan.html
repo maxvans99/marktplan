@@ -465,7 +465,7 @@ function reportCloudError(e) {
 // ─── PERSISTENZ (localStorage) ───────────────────────────────────────────────
 const LS_PREFIX  = "marktplan:";
 const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
-const APP_BUILD  = "20260801-6"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
+const APP_BUILD  = "20260801-7"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
 
 function clearAllPersistedState() {
   try {
@@ -564,7 +564,9 @@ function usePersistedState(key, initial) {
             let next = remote;
             // Bei Passwort-Daten gewinnt IMMER die Cloud — lokale/veraltete Werte
             // dürfen echte Passwörter nie überschreiben.
-            const remoteWins = key === "adminPwHash" || key === "managerCreds";
+            // pushTokens hat keine "id" pro Eintrag → mergeLocalIntoRemote kann Duplikate
+            // nicht erkennen und würde bei jedem Merge-Zyklus Einträge verdoppeln.
+            const remoteWins = key === "adminPwHash" || key === "managerCreds" || key === "pushTokens";
             if (firstSync && dirtyPreSync.current && !remoteWins) {
               next = mergeLocalIntoRemote(remote, cur);
               dirtyPreSync.current = false;
@@ -895,6 +897,19 @@ function App() {
   function disablePushForEmployee(employeeId) {
     setPushTokens(prev => prev.filter(t => t.employeeId !== employeeId));
   }
+  // Einmalige Bereinigung von Altlasten-Duplikaten (siehe mergeLocalIntoRemote-Bug,
+  // fehlende "id" pro Eintrag führte vor diesem Fix zu massenhaften Doppel-Einträgen).
+  useEffect(() => {
+    setPushTokens(prev => {
+      const seen = new Set();
+      const deduped = prev.filter(t => {
+        const k = t.employeeId + "|" + t.token;
+        if (seen.has(k)) return false;
+        seen.add(k); return true;
+      });
+      return deduped.length === prev.length ? prev : deduped;
+    });
+  }, [pushTokens.length]);
 
   useEffect(() => { try { localStorage.setItem(LS_PREFIX + "version", LS_VERSION); } catch {} }, []);
 
