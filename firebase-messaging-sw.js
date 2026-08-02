@@ -13,13 +13,14 @@ firebase.initializeApp({
   appId: "1:85624571703:web:4282281fc72386c628bcb2"
 });
 
-const messaging = firebase.messaging();
-
-messaging.onBackgroundMessage((payload) => {
-  const title = payload.notification?.title ?? "Neuer Schichtplan";
-  const body = payload.notification?.body ?? "";
-  self.registration.showNotification(title, {
-    body,
-    icon: "icon-192.png",
-  });
+// Reiner "push"-Event-Handler statt messaging.onBackgroundMessage(): Unsere Nachrichten
+// sind bewusst reine Daten-Nachrichten (kein "notification"-Feld im FCM-Payload), damit
+// der Browser sie nicht zusätzlich automatisch anzeigt — wir zeigen sie genau einmal hier.
+self.addEventListener("push", (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch { data = {}; }
+  const payload = data.data ?? data; // FCM verpackt Daten-Nachrichten unter "data"
+  const title = payload.title ?? "Neuer Schichtplan";
+  const body = payload.body ?? "";
+  event.waitUntil(self.registration.showNotification(title, { body, icon: "icon-192.png" }));
 });
