@@ -13,6 +13,11 @@ firebase.initializeApp({
   appId: "1:85624571703:web:4282281fc72386c628bcb2"
 });
 
+// Neue Service-Worker-Version sofort aktivieren (nicht erst beim übernächsten Laden) —
+// wichtig, damit Fixes wie dieser hier ohne doppelten Neustart wirksam werden.
+self.addEventListener("install", () => self.skipWaiting());
+self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
+
 // Reiner "push"-Event-Handler statt messaging.onBackgroundMessage(): Unsere Nachrichten
 // sind bewusst reine Daten-Nachrichten (kein "notification"-Feld im FCM-Payload), damit
 // der Browser sie nicht zusätzlich automatisch anzeigt — wir zeigen sie genau einmal hier.
