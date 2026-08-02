@@ -469,7 +469,7 @@ function reportCloudError(e) {
 // ─── PERSISTENZ (localStorage) ───────────────────────────────────────────────
 const LS_PREFIX  = "marktplan:";
 const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
-const APP_BUILD  = "20260801-8"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
+const APP_BUILD  = "20260801-9"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
 
 function clearAllPersistedState() {
   try {
@@ -2502,6 +2502,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
   const [notifyState, setNotifyState] = useState("idle"); // idle | sending | done | error
   const [notifyErrorMsg, setNotifyErrorMsg] = useState("");
   async function handleNotify() {
+    setNotifyErrorMsg("");
     const weekSet = new Set(weekDates.map(fmtISO));
     const empIds = [...new Set(shifts.filter(s => weekSet.has(s.date) && employees.some(e => e.id === s.employeeId && e.marketId === marketId)).map(s => s.employeeId))];
     if (empIds.length === 0) {
@@ -3032,8 +3033,8 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
               : notifyState === "error" ? "⚠ Fehlgeschlagen — bitte erneut versuchen"
               : "🔔 Mitarbeiter über diesen Plan benachrichtigen"}
           </button>
-          {(notifyState === "error" || notifyState === "done") && notifyErrorMsg && (
-            <div style={{ fontSize: 12, color: notifyState === "error" ? "#DC2626" : "#16A34A", marginTop: 6, wordBreak: "break-word" }}>
+          {notifyState === "error" && notifyErrorMsg && (
+            <div style={{ fontSize: 12, color: "#DC2626", marginTop: 6, wordBreak: "break-word" }}>
               {notifyErrorMsg}
             </div>
           )}
