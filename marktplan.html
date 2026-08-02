@@ -428,15 +428,19 @@ async function claimRole(role, marketId, passwordHash) {
 }
 
 // Fragt Push-Berechtigung an und liefert den Geräte-Token, oder null bei Ablehnung/Fehler.
+// Gibt bei Erfolg { token } zurück, sonst { error: "denied"|"unsupported"|"failed" } —
+// so kann die UI dem Mitarbeiter sagen, WARUM es nicht geklappt hat (z.B. Berechtigung
+// in den iOS/Browser-Einstellungen blockiert, statt nur stillschweigend nichts zu tun).
 async function requestPushToken() {
-  if (!CLOUD_ENABLED || !("Notification" in window) || !swRegistration) return null;
+  if (!CLOUD_ENABLED || !("Notification" in window) || !swRegistration) return { error: "unsupported" };
   try {
     const perm = await Notification.requestPermission();
-    if (perm !== "granted") return null;
-    return await firebase.messaging().getToken({ vapidKey: PUSH_VAPID_KEY, serviceWorkerRegistration: swRegistration });
+    if (perm !== "granted") return { error: "denied" };
+    const token = await firebase.messaging().getToken({ vapidKey: PUSH_VAPID_KEY, serviceWorkerRegistration: swRegistration });
+    return { token };
   } catch (e) {
     console.warn("Push-Token-Fehler:", e);
-    return null;
+    return { error: "failed" };
   }
 }
 
@@ -465,7 +469,7 @@ function reportCloudError(e) {
 // ─── PERSISTENZ (localStorage) ───────────────────────────────────────────────
 const LS_PREFIX  = "marktplan:";
 const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
-const APP_BUILD  = "20260801-7"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
+const APP_BUILD  = "20260801-8"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
 
 function clearAllPersistedState() {
   try {
@@ -886,13 +890,13 @@ function App() {
   // zugeordnet sein, z.B. Familien-Handy) — siehe {employeeId, token, marketId}.
   const [pushTokens, setPushTokens] = usePersistedState("pushTokens", []);
   async function enablePushForEmployee(employeeId, marketId) {
-    const token = await requestPushToken();
-    if (!token) return false;
+    const result = await requestPushToken();
+    if (result.error) return result;
     setPushTokens(prev => {
-      const exists = prev.some(t => t.employeeId === employeeId && t.token === token);
-      return exists ? prev : [...prev, { employeeId, token, marketId }];
+      const exists = prev.some(t => t.employeeId === employeeId && t.token === result.token);
+      return exists ? prev : [...prev, { employeeId, token: result.token, marketId }];
     });
-    return true;
+    return { ok: true };
   }
   function disablePushForEmployee(employeeId) {
     setPushTokens(prev => prev.filter(t => t.employeeId !== employeeId));
@@ -1510,6 +1514,17 @@ function EmployeeView({ me, marketId, availability, shifts, absences, onSaveAbse
   const [showPwModal, setShowPwModal] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [pw1, setPw1] = useState(""); const [pw2, setPw2] = useState(""); const [pwErr, setPwErr] = useState(""); const [pwSaved, setPwSaved] = useState(false);
+  const [pushMsg, setPushMsg] = useState("");
+  async function handleTogglePush() {
+    setPushMsg("");
+    if (pushEnabled) { onDisablePush(); return; }
+    const result = await onEnablePush();
+    if (result?.error === "denied") {
+      setPushMsg("Berechtigung wurde blockiert. Bitte in den Geräte-/Browser-Einstellungen für diese Seite Benachrichtigungen erlauben.");
+    } else if (result?.error) {
+      setPushMsg("Konnte nicht aktiviert werden — bitte später erneut versuchen.");
+    }
+  }
 
   const myShifts = useMemo(() => {
     const ws = weekDates.map(fmtISO);
@@ -1576,7 +1591,7 @@ function EmployeeView({ me, marketId, availability, shifts, absences, onSaveAbse
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
           {"Notification" in window && (
             <button className="mob-logout" style={{ background: pushEnabled ? "#1E293B" : "#3B82F6" }}
-              onClick={() => { pushEnabled ? onDisablePush() : onEnablePush(); }}>
+              onClick={handleTogglePush}>
               {pushEnabled ? "🔔" : "🔕"}
             </button>
           )}
@@ -1596,13 +1611,18 @@ function EmployeeView({ me, marketId, availability, shifts, absences, onSaveAbse
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             {"Notification" in window && (
               <button className="btn-logout-top" title={pushEnabled ? "Benachrichtigungen auf diesem Gerät deaktivieren" : "Benachrichtigt dich, wenn ein neuer Plan für dich veröffentlicht wird"}
-                onClick={() => { pushEnabled ? onDisablePush() : onEnablePush(); }}>
+                onClick={handleTogglePush}>
                 {pushEnabled ? "🔔 Benachrichtigungen an" : "🔕 Benachrichtigungen aktivieren"}
               </button>
             )}
             <button className="btn-logout-top" onClick={() => { if (saved === false) { setShowLogoutConfirm(true); } else { onLogout(); } }}>← Abmelden</button>
           </div>
         </div>
+        {pushMsg && (
+          <div style={{ background: "#FEF3C7", border: "1px solid #FDE68A", color: "#92400E", borderRadius: 8, padding: "8px 12px", fontSize: 13, marginBottom: 14 }}>
+            ⚠ {pushMsg}
+          </div>
+        )}
 
         <WeekNav weekStart={weekStart} weekDates={weekDates} onChange={onWeekChange} />
 
@@ -2486,24 +2506,18 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
     const empIds = [...new Set(shifts.filter(s => weekSet.has(s.date) && employees.some(e => e.id === s.employeeId && e.marketId === marketId)).map(s => s.employeeId))];
     if (empIds.length === 0) {
       setNotifyErrorMsg("Kein Mitarbeiter mit Schicht in dieser Woche gefunden.");
-      setNotifyState("error"); setTimeout(() => setNotifyState("idle"), 6000); return;
+      setNotifyState("error"); setTimeout(() => setNotifyState("idle"), 5000); return;
     }
     setNotifyState("sending");
-    let debugClaims = "";
     try {
-      const tokenResult = await firebase.auth().currentUser?.getIdTokenResult();
-      debugClaims = ` [Token-Claims: role=${tokenResult?.claims?.role ?? "—"}, marketId=${tokenResult?.claims?.marketId ?? "—"}, gesendet marketId=${marketId}]`;
-    } catch {}
-    try {
-      const result = await onNotifyEmployees(empIds);
-      setNotifyErrorMsg(JSON.stringify(result) + debugClaims);
+      await onNotifyEmployees(empIds);
       setNotifyState("done");
     } catch (e) {
       console.warn("Benachrichtigung fehlgeschlagen:", e);
-      setNotifyErrorMsg(String(e.message || e) + debugClaims);
+      setNotifyErrorMsg("Bitte einmal ab- und wieder anmelden und erneut versuchen.");
       setNotifyState("error");
     }
-    setTimeout(() => setNotifyState("idle"), 15000);
+    setTimeout(() => setNotifyState("idle"), 5000);
   }
   const [sbOpen, setSbOpen] = useState(false);
   const [modal, setModal] = useState(null);
