@@ -469,7 +469,7 @@ function reportCloudError(e) {
 // ─── PERSISTENZ (localStorage) ───────────────────────────────────────────────
 const LS_PREFIX  = "marktplan:";
 const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
-const APP_BUILD  = "20260801-9"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
+const APP_BUILD  = "20260901-1"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
 
 function clearAllPersistedState() {
   try {
@@ -2501,17 +2501,33 @@ function ZeitkontoModal({ emp, shifts, onClose }) {
 function ManagerView({ marketId, onMarketChange, isAdmin, employees, availability, shifts, absences, weekStart, weekDates, onWeekChange, onAddShift, onDelShift, onAddEmployee, onDeleteEmployee, onUpdateEmployee, onImportAvailability, deliveryConfig, onUpdateDelivery, roles, thresholds, marketHours, onUpdateRoles, onUpdateMarketHours, onBulkAddShifts, onLogout, onResetData, managerCreds, onUpdateManagerCreds, deadlineDaysByMarket, onUpdateDeadlineDaysByMarket, onDownloadBackup, onNotifyEmployees }) {
   const [notifyState, setNotifyState] = useState("idle"); // idle | sending | done | error
   const [notifyErrorMsg, setNotifyErrorMsg] = useState("");
+  // Sammelt die employeeIds, deren Schichten seit der letzten Benachrichtigung
+  // geändert wurden (hinzugefügt/gelöscht/ersetzt) — so wird beim Klick auf
+  // "Benachrichtigen" NUR an tatsächlich betroffene Mitarbeiter gesendet,
+  // nicht an alle mit irgendeiner Schicht in der aktuell angezeigten Woche.
+  const changedEmpIdsRef = useRef(new Set());
+  function trackShiftChange(empId) { if (empId) changedEmpIdsRef.current.add(empId); }
+  function addShiftTracked(s) { trackShiftChange(s.employeeId); onAddShift(s); }
+  function delShiftTracked(id) {
+    const sh = shifts.find(s => s.id === id);
+    if (sh) trackShiftChange(sh.employeeId);
+    onDelShift(id);
+  }
+  function bulkAddShiftsTracked(newShifts) {
+    newShifts.forEach(s => trackShiftChange(s.employeeId));
+    onBulkAddShifts(newShifts);
+  }
   async function handleNotify() {
     setNotifyErrorMsg("");
-    const weekSet = new Set(weekDates.map(fmtISO));
-    const empIds = [...new Set(shifts.filter(s => weekSet.has(s.date) && employees.some(e => e.id === s.employeeId && e.marketId === marketId)).map(s => s.employeeId))];
+    const empIds = [...changedEmpIdsRef.current].filter(id => employees.some(e => e.id === id && e.marketId === marketId));
     if (empIds.length === 0) {
-      setNotifyErrorMsg("Kein Mitarbeiter mit Schicht in dieser Woche gefunden.");
+      setNotifyErrorMsg("Keine Planänderungen seit der letzten Benachrichtigung gefunden.");
       setNotifyState("error"); setTimeout(() => setNotifyState("idle"), 5000); return;
     }
     setNotifyState("sending");
     try {
       await onNotifyEmployees(empIds);
+      changedEmpIdsRef.current.clear();
       setNotifyState("done");
     } catch (e) {
       console.warn("Benachrichtigung fehlgeschlagen:", e);
@@ -2633,8 +2649,8 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
       setTimeErr(`Zeiten müssen innerhalb der Verfügbarkeit ${av.startTime}–${av.endTime} liegen.`);
       return;
     }
-    if (modal.sh) onDelShift(modal.sh.id);
-    onAddShift({ employeeId: modal.emp.id, date: modal.date, startTime: shiftStart, endTime: shiftEnd, roles: shiftRoles });
+    if (modal.sh) delShiftTracked(modal.sh.id);
+    addShiftTracked({ employeeId: modal.emp.id, date: modal.date, startTime: shiftStart, endTime: shiftEnd, roles: shiftRoles });
     setModal(null);
     flash("✓ Schicht gespeichert");
   }
@@ -2884,7 +2900,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
               <span style={{ fontSize: 13, fontWeight: 700, color: "#1D4ED8", flex: 1 }}>
                 ✨ {autoPlanProposal.length} Schichten vorgeschlagen
               </span>
-              <button onClick={() => { onBulkAddShifts(autoPlanProposal); setAutoPlanProposal([]); flash("✓ Schichtplan übernommen"); }}
+              <button onClick={() => { bulkAddShiftsTracked(autoPlanProposal); setAutoPlanProposal([]); flash("✓ Schichtplan übernommen"); }}
                 style={{ background: "#3B82F6", color: "#fff", border: "none", borderRadius: 7, padding: "6px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
                 ✅ Übernehmen
               </button>
@@ -3379,7 +3395,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
             {timeErr && <div className="auth-error" style={{ marginBottom: 12 }}>{timeErr}</div>}
             <div className="macts">
               <button className="btn-cancel" onClick={() => setModal(null)}>Abbrechen</button>
-              {modal.sh && <button className="btn-del" onClick={() => { onDelShift(modal.sh.id); setModal(null); flash("✓ Schicht gelöscht"); }}>Löschen</button>}
+              {modal.sh && <button className="btn-del" onClick={() => { delShiftTracked(modal.sh.id); setModal(null); flash("✓ Schicht gelöscht"); }}>Löschen</button>}
               <button className="btn-ok" disabled={!shiftStart || !shiftEnd} onClick={confirmShift}>
                 {modal.sh ? "Speichern" : "Einplanen"}
               </button>
