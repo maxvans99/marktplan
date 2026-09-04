@@ -469,7 +469,7 @@ function reportCloudError(e) {
 // ─── PERSISTENZ (localStorage) ───────────────────────────────────────────────
 const LS_PREFIX  = "marktplan:";
 const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
-const APP_BUILD  = "20260902-1"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
+const APP_BUILD  = "20260904-1"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
 
 function clearAllPersistedState() {
   try {
@@ -1293,6 +1293,10 @@ function LoginScreen({ employees, onLogin, managerCreds, adminPwHash, onSetAdmin
         </>}
 
         <button className="btn-primary" disabled={!canSubmit} onClick={submit}>Anmelden</button>
+        <div style={{ textAlign: "center" }}>
+          <a href="https://www.edeka-winkler.de/impressum" target="_blank" rel="noopener noreferrer"
+            style={{ display: "inline-block", marginTop: 16, fontSize: 12, color: "#94A3B8", textDecoration: "underline" }}>Impressum</a>
+        </div>
       </div>
     </div>
   );
