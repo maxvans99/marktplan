@@ -475,7 +475,7 @@ function reportCloudError(e) {
 // ─── PERSISTENZ (localStorage) ───────────────────────────────────────────────
 const LS_PREFIX  = "marktplan:";
 const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
-const APP_BUILD  = "20261008-1"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
+const APP_BUILD  = "20261019-1"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
 
 function clearAllPersistedState() {
   try {
@@ -2039,6 +2039,7 @@ function ImportPlanModal({ marketId, employees, roles, onImport, onClose }) {
   const [warnings, setWarnings] = React.useState([]);
   const [rows, setRows] = React.useState(null); // Vorschau-Zeilen
   const [matches, setMatches] = React.useState({}); // rowIndex -> employeeId (string) | ""
+  const [skippedNames, setSkippedNames] = React.useState([]);
   const fileRef = React.useRef();
   const mktEmps = employees.filter(e => e.marketId === marketId);
 
@@ -2050,13 +2051,18 @@ function ImportPlanModal({ marketId, employees, roles, onImport, onClose }) {
       const buf = await f.arrayBuffer();
       const result = await parsePlanPdf(buf);
       setWarnings(result.warnings);
-      setRows(result.rows);
+      // Nur Zeilen übernehmen, deren Name einem bereits angelegten Mitarbeiter entspricht.
+      const keptRows = [];
       const initialMatches = {};
-      result.rows.forEach((r, i) => {
+      const skipped = [];
+      result.rows.forEach(r => {
         const m = matchEmployee(r.rawName, mktEmps);
-        initialMatches[i] = m ? String(m.id) : "";
+        if (m) { initialMatches[keptRows.length] = String(m.id); keptRows.push(r); }
+        else skipped.push(r.rawName || "(kein Name erkannt)");
       });
+      setRows(keptRows);
       setMatches(initialMatches);
+      setSkippedNames(skipped);
     } catch (err) {
       setError("PDF konnte nicht gelesen werden. (" + err.message + ")");
     }
@@ -2064,7 +2070,7 @@ function ImportPlanModal({ marketId, employees, roles, onImport, onClose }) {
   }
 
   const shiftCount = rows ? rows.reduce((n, r) => n + r.cells.filter(c => !c.empty).length, 0) : 0;
-  const unmatchedCount = rows ? rows.filter((_, i) => !matches[i]).length : 0;
+  const unmatchedCount = rows ? rows.filter((_, i) => !matches[i]).length : 0; // nur relevant, falls jemand im Dropdown "—" wählt
 
   function handleImportClick() {
     const newShifts = [];
@@ -2111,8 +2117,9 @@ function ImportPlanModal({ marketId, employees, roles, onImport, onClose }) {
         {rows && (
           <>
             <div style={{ fontSize: 13, color: "#475569", margin: "14px 0 10px" }}>
-              <b>{rows.length}</b> Zeilen erkannt, <b>{shiftCount}</b> Schichten gefunden.
-              {unmatchedCount > 0 && <span style={{ color: "#DC2626", fontWeight: 700 }}> {unmatchedCount} ohne Mitarbeiter-Zuordnung — bitte manuell auswählen.</span>}
+              <b>{rows.length}</b> angelegte Mitarbeiter erkannt, <b>{shiftCount}</b> Schichten gefunden.
+              {skippedNames.length > 0 && <div style={{ color: "#94A3B8", marginTop: 4 }}>{skippedNames.length} Zeilen ausgelassen (Mitarbeiter in MarktPlan nicht angelegt).</div>}
+              {unmatchedCount > 0 && <span style={{ color: "#DC2626", fontWeight: 700 }}> {unmatchedCount} ohne Mitarbeiter-Zuordnung — bitte auswählen.</span>}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 360, overflowY: "auto", marginBottom: 16 }}>
               {rows.map((r, i) => {
