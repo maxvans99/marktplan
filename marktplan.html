@@ -475,7 +475,7 @@ function reportCloudError(e) {
 // ─── PERSISTENZ (localStorage) ───────────────────────────────────────────────
 const LS_PREFIX  = "marktplan:";
 const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
-const APP_BUILD  = "20261019-1"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
+const APP_BUILD  = "20261019-2"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
 
 function clearAllPersistedState() {
   try {
@@ -1181,6 +1181,10 @@ function App({ onSessionChange, logoutTick }) {
       marketHours={mktRolesConfig.marketHours}
       onUpdateRoles={(roles, thresholds, marketHours) => setRolesConfig(p => ({ ...p, [marketId]: { ...p[marketId] ?? {}, roles, thresholds, marketHours } }))}
       onBulkAddShifts={newShifts => setShifts(p => [...p, ...newShifts])}
+      onReplaceShifts={(newShifts, empIds, dates) => setShifts(p => [
+        ...p.filter(s => !(empIds.includes(s.employeeId) && dates.includes(s.date))),
+        ...newShifts,
+      ])}
       onResetData={resetAllData}
       managerCreds={managerCreds}
       onUpdateManagerCreds={creds => setManagerCreds(creds)}
@@ -2032,7 +2036,7 @@ function matchEmployee(rawName, employees) {
   return m || null;
 }
 
-function ImportPlanModal({ marketId, employees, roles, onImport, onClose }) {
+function ImportPlanModal({ marketId, employees, roles, existingShifts, onImport, onClose }) {
   const [file, setFile] = React.useState(null);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState("");
@@ -2072,8 +2076,25 @@ function ImportPlanModal({ marketId, employees, roles, onImport, onClose }) {
   const shiftCount = rows ? rows.reduce((n, r) => n + r.cells.filter(c => !c.empty).length, 0) : 0;
   const unmatchedCount = rows ? rows.filter((_, i) => !matches[i]).length : 0; // nur relevant, falls jemand im Dropdown "—" wählt
 
+  // Betroffene Mitarbeiter und Tage (alle 7 Tage des PDFs, auch freie) → bestehende Schichten werden dort ersetzt
+  function importScope() {
+    const empIds = new Set();
+    const dates = new Set();
+    rows.forEach((r, i) => {
+      const empId = matches[i] ? parseInt(matches[i]) : null;
+      if (!empId) return;
+      empIds.add(empId);
+      r.cells.forEach(c => dates.add(c.date));
+    });
+    return { empIds: [...empIds], dates: [...dates] };
+  }
+  const replaceCount = rows
+    ? (() => { const { empIds, dates } = importScope(); return (existingShifts ?? []).filter(s => empIds.includes(s.employeeId) && dates.includes(s.date)).length; })()
+    : 0;
+
   function handleImportClick() {
     const newShifts = [];
+    const { empIds, dates } = importScope();
     rows.forEach((r, i) => {
       const empId = matches[i] ? parseInt(matches[i]) : null;
       if (!empId) return;
@@ -2088,7 +2109,7 @@ function ImportPlanModal({ marketId, employees, roles, onImport, onClose }) {
         });
       });
     });
-    onImport(newShifts);
+    onImport(newShifts, empIds, dates);
     onClose();
   }
 
@@ -2118,6 +2139,7 @@ function ImportPlanModal({ marketId, employees, roles, onImport, onClose }) {
           <>
             <div style={{ fontSize: 13, color: "#475569", margin: "14px 0 10px" }}>
               <b>{rows.length}</b> angelegte Mitarbeiter erkannt, <b>{shiftCount}</b> Schichten gefunden.
+              {replaceCount > 0 && <div style={{ color: "#B45309", fontWeight: 700, marginTop: 4 }}>⚠ {replaceCount} bereits vorhandene Schichten dieser Mitarbeiter in diesem Zeitraum werden durch den Import ersetzt.</div>}
               {skippedNames.length > 0 && <div style={{ color: "#94A3B8", marginTop: 4 }}>{skippedNames.length} Zeilen ausgelassen (Mitarbeiter in MarktPlan nicht angelegt).</div>}
               {unmatchedCount > 0 && <span style={{ color: "#DC2626", fontWeight: 700 }}> {unmatchedCount} ohne Mitarbeiter-Zuordnung — bitte auswählen.</span>}
             </div>
@@ -2892,7 +2914,7 @@ function ZeitkontoModal({ emp, shifts, onClose }) {
   );
 }
 
-function ManagerView({ marketId, onMarketChange, isAdmin, employees, availability, shifts, absences, weekStart, weekDates, onWeekChange, onAddShift, onDelShift, onAddEmployee, onDeleteEmployee, onUpdateEmployee, onImportAvailability, deliveryConfig, onUpdateDelivery, roles, thresholds, marketHours, onUpdateRoles, onUpdateMarketHours, onBulkAddShifts, onLogout, onResetData, managerCreds, onUpdateManagerCreds, deadlineDaysByMarket, onUpdateDeadlineDaysByMarket, onDownloadBackup, onNotifyEmployees }) {
+function ManagerView({ marketId, onMarketChange, isAdmin, employees, availability, shifts, absences, weekStart, weekDates, onWeekChange, onAddShift, onDelShift, onAddEmployee, onDeleteEmployee, onUpdateEmployee, onImportAvailability, deliveryConfig, onUpdateDelivery, roles, thresholds, marketHours, onUpdateRoles, onUpdateMarketHours, onBulkAddShifts, onReplaceShifts, onLogout, onResetData, managerCreds, onUpdateManagerCreds, deadlineDaysByMarket, onUpdateDeadlineDaysByMarket, onDownloadBackup, onNotifyEmployees }) {
   const [notifyState, setNotifyState] = useState("idle"); // idle | sending | done | error
   const [notifyErrorMsg, setNotifyErrorMsg] = useState("");
   // Sammelt die employeeIds, deren Schichten seit der letzten Benachrichtigung
@@ -4049,8 +4071,12 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
       )}
 
       {showImportPlan && (
-        <ImportPlanModal marketId={marketId} employees={employees} roles={roles}
-          onImport={newShifts => { bulkAddShiftsTracked(newShifts); flash(`✓ ${newShifts.length} Schichten importiert`); }}
+        <ImportPlanModal marketId={marketId} employees={employees} roles={roles} existingShifts={shifts}
+          onImport={(newShifts, empIds, dates) => {
+            empIds.forEach(trackShiftChange);
+            onReplaceShifts(newShifts, empIds, dates);
+            flash(`✓ ${newShifts.length} Schichten importiert`);
+          }}
           onClose={() => setShowImportPlan(false)} />
       )}
 
