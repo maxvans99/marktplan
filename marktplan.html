@@ -475,7 +475,7 @@ function reportCloudError(e) {
 // ─── PERSISTENZ (localStorage) ───────────────────────────────────────────────
 const LS_PREFIX  = "marktplan:";
 const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
-const APP_BUILD  = "20261019-4"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
+const APP_BUILD  = "20261019-5"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
 
 function clearAllPersistedState() {
   try {
@@ -1181,6 +1181,10 @@ function App({ onSessionChange, logoutTick }) {
       marketHours={mktRolesConfig.marketHours}
       onUpdateRoles={(roles, thresholds, marketHours) => setRolesConfig(p => ({ ...p, [marketId]: { ...p[marketId] ?? {}, roles, thresholds, marketHours } }))}
       onBulkAddShifts={newShifts => setShifts(p => [...p, ...newShifts])}
+      onImportAbsences={newAbs => setAbsences(p => [
+        ...p.filter(a => !newAbs.some(n => n.employeeId === a.employeeId && n.date === a.date)),
+        ...newAbs,
+      ])}
       onReplaceShifts={(newShifts, empIds, dates) => setShifts(p => [
         ...p.filter(s => !(empIds.includes(s.employeeId) && dates.includes(s.date))),
         ...newShifts,
@@ -2074,7 +2078,9 @@ function ImportPlanModal({ marketId, employees, roles, existingShifts, onImport,
     setLoading(false);
   }
 
+  const isUrlaub = c => c.empty && /urlaub/i.test(c.label || "");
   const shiftCount = rows ? rows.reduce((n, r) => n + r.cells.filter(c => !c.empty).length, 0) : 0;
+  const urlaubCount = rows ? rows.reduce((n, r) => n + r.cells.filter(isUrlaub).length, 0) : 0;
   const unmatchedCount = rows ? rows.filter((_, i) => !matches[i]).length : 0; // nur relevant, falls jemand im Dropdown "—" wählt
 
   // Betroffene Mitarbeiter und Tage (alle 7 Tage des PDFs, auch freie) → bestehende Schichten werden dort ersetzt
@@ -2095,12 +2101,14 @@ function ImportPlanModal({ marketId, employees, roles, existingShifts, onImport,
 
   function handleImportClick() {
     const newShifts = [];
+    const newAbsences = [];
     const { empIds, dates } = importScope();
     rows.forEach((r, i) => {
       const empId = matches[i] ? parseInt(matches[i]) : null;
       if (!empId) return;
       const baseRole = matchRoleForSection(r.section, roles);
       r.cells.forEach(c => {
+        if (isUrlaub(c)) { newAbsences.push({ id: uid(), employeeId: empId, date: c.date, note: "Urlaub" }); return; }
         if (c.empty) return;
         const cellRole = refineRoleForCell(baseRole, roles, c.note);
         newShifts.push({
@@ -2110,7 +2118,7 @@ function ImportPlanModal({ marketId, employees, roles, existingShifts, onImport,
         });
       });
     });
-    onImport(newShifts, empIds, dates);
+    onImport(newShifts, empIds, dates, newAbsences);
     onClose();
   }
 
@@ -2139,7 +2147,7 @@ function ImportPlanModal({ marketId, employees, roles, existingShifts, onImport,
         {rows && (
           <>
             <div style={{ fontSize: 13, color: "#475569", margin: "14px 0 10px" }}>
-              <b>{rows.length}</b> angelegte Mitarbeiter erkannt, <b>{shiftCount}</b> Schichten gefunden.
+              <b>{rows.length}</b> angelegte Mitarbeiter erkannt, <b>{shiftCount}</b> Schichten{urlaubCount > 0 ? <> und <b>{urlaubCount}</b> Urlaubstage</> : ""} gefunden.
               {replaceCount > 0 && <div style={{ color: "#B45309", fontWeight: 700, marginTop: 4 }}>⚠ {replaceCount} bereits vorhandene Schichten dieser Mitarbeiter in diesem Zeitraum werden durch den Import ersetzt.</div>}
               {skippedNames.length > 0 && <div style={{ color: "#94A3B8", marginTop: 4 }}>{skippedNames.length} Zeilen ausgelassen (Mitarbeiter in MarktPlan nicht angelegt).</div>}
               {unmatchedCount > 0 && <span style={{ color: "#DC2626", fontWeight: 700 }}> {unmatchedCount} ohne Mitarbeiter-Zuordnung — bitte auswählen.</span>}
@@ -2147,7 +2155,8 @@ function ImportPlanModal({ marketId, employees, roles, existingShifts, onImport,
             <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 360, overflowY: "auto", marginBottom: 16 }}>
               {rows.map((r, i) => {
                 const n = r.cells.filter(c => !c.empty).length;
-                const skipped = r.cells.filter(c => c.empty && c.label).map(c => c.label);
+                const urlaubTage = r.cells.filter(isUrlaub).length;
+                const skipped = r.cells.filter(c => c.empty && c.label && !isUrlaub(c)).map(c => c.label);
                 const matchedRole = matchRoleForSection(r.section, roles);
                 const cellRoles = r.cells.filter(c => !c.empty).map(c => refineRoleForCell(matchedRole, roles, c.note));
                 const roleNames = [...new Set(cellRoles.map(rl => rl?.name).filter(Boolean))];
@@ -2164,7 +2173,7 @@ function ImportPlanModal({ marketId, employees, roles, existingShifts, onImport,
                       <option value="">— Mitarbeiter wählen{r.rawName ? ` (erkannt: "${r.rawName}")` : " (kein Name erkannt)"} —</option>
                       {mktEmps.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
                     </select>
-                    <div style={{ fontSize: 12, color: "#475569" }}>{n} Schicht{n === 1 ? "" : "en"}{skipped.length > 0 ? `, übersprungen: ${skipped.join(", ")}` : ""}</div>
+                    <div style={{ fontSize: 12, color: "#475569" }}>{n} Schicht{n === 1 ? "" : "en"}{urlaubTage > 0 ? `, ${urlaubTage} Urlaubstag${urlaubTage === 1 ? "" : "e"}` : ""}{skipped.length > 0 ? `, übersprungen: ${skipped.join(", ")}` : ""}</div>
                   </div>
                 );
               })}
@@ -2174,7 +2183,7 @@ function ImportPlanModal({ marketId, employees, roles, existingShifts, onImport,
 
         <div className="macts">
           <button className="btn-cancel" onClick={onClose}>Abbrechen</button>
-          {rows && <button className="btn-ok" disabled={shiftCount === 0} onClick={handleImportClick}>Übernehmen ({shiftCount} Schichten)</button>}
+          {rows && <button className="btn-ok" disabled={shiftCount + urlaubCount === 0} onClick={handleImportClick}>Übernehmen ({shiftCount} Schichten{urlaubCount > 0 ? `, ${urlaubCount} Urlaubstage` : ""})</button>}
         </div>
       </div>
     </div>
@@ -2493,12 +2502,12 @@ function RolesModal({ roles, thresholds: initThresholds, marketHours: initMh, on
   }
 
   function setHours(id, typ, val) {
-    const n = parseInt(val);
+    const n = parseFloat(val);
     setList(l => l.map(x => x.id === id ? { ...x, targetHours: { ...x.targetHours, [typ]: isNaN(n) || n < 0 ? 0 : n } } : x));
   }
 
   function setDayOverride(id, dow, field, val) {
-    const n = parseInt(val);
+    const n = parseFloat(val);
     setList(l => l.map(x => {
       if (x.id !== id) return x;
       const prev = x.dayOverrides?.[dow] ?? {};
@@ -2548,9 +2557,9 @@ function RolesModal({ roles, thresholds: initThresholds, marketHours: initMh, on
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <span style={{ fontSize: 12, color: "#475569", fontWeight: 600 }}>Gesamt-Soll</span>
-                <input type="number" min="0" max="9999" placeholder="z.B. 300"
+                <input type="number" step="any" min="0" max="9999" placeholder="z.B. 300"
                   value={mh.totalTargetHours || ""}
-                  onChange={e => { const n = parseInt(e.target.value); setMh(m => ({ ...m, totalTargetHours: isNaN(n) ? 0 : n })); }}
+                  onChange={e => { const n = parseFloat(e.target.value); setMh(m => ({ ...m, totalTargetHours: isNaN(n) ? 0 : n })); }}
                   style={{ padding: "4px 8px", border: "1.5px solid #BFDBFE", borderRadius: 6, fontSize: 13, outline: "none", width: 80, background: "#EFF6FF", color: "#1D4ED8", fontWeight: 700 }} />
                 <span style={{ fontSize: 12, color: "#475569" }}>h/Woche</span>
               </div>
@@ -2619,14 +2628,14 @@ function RolesModal({ roles, thresholds: initThresholds, marketHours: initMh, on
                   style={{ flex: 1, border: "1.5px solid #E2E8F0", borderRadius: 7, padding: "5px 8px", fontSize: 13, fontWeight: 600, color: "#1E293B", outline: "none", background: "white", minWidth: 0 }} />
               </div>
               {["Früh", "Mittel", "Spät"].map(typ => (
-                <input key={typ} type="number" min="0" max="999" placeholder="–"
+                <input key={typ} type="number" step="any" min="0" max="999"placeholder="–"
                   value={(r.targetHours?.[typ] ?? "") === 0 ? "" : (r.targetHours?.[typ] ?? "")}
                   onChange={e => setHours(r.id, typ, e.target.value)}
                   style={inputStyle} />
               ))}
-              <input type="number" min="0" max="999" placeholder="–"
+              <input type="number" step="any" min="0" max="999"placeholder="–"
                 value={(r.dailyTargetHours ?? "") === 0 ? "" : (r.dailyTargetHours ?? "")}
-                onChange={e => { const n = parseInt(e.target.value); setList(l => l.map(x => x.id === r.id ? { ...x, dailyTargetHours: isNaN(n) || n < 0 ? 0 : n } : x)); }}
+                onChange={e => { const n = parseFloat(e.target.value); setList(l => l.map(x => x.id === r.id ? { ...x, dailyTargetHours: isNaN(n) || n < 0 ? 0 : n } : x)); }}
                 style={{ ...inputStyle, borderColor: "#A7F3D0", background: "#ECFDF5", color: "#059669" }} />
               <button onClick={() => setExpandedRole(isOpen ? null : r.id)}
                 title="Tagesabhängige Soll-Stunden"
@@ -2655,12 +2664,12 @@ function RolesModal({ roles, thresholds: initThresholds, marketHours: initMh, on
                     <div key={dow} style={{ display: "grid", gridTemplateColumns: "40px 60px 60px 60px 60px", gap: 6, alignItems: "center", marginBottom: 4 }}>
                       <span style={{ fontSize: 12, fontWeight: 700, color: "#78350F" }}>{DAY_LABELS[i]}</span>
                       {["Früh", "Mittel", "Spät"].map(typ => (
-                        <input key={typ} type="number" min="0" max="999" placeholder={r.targetHours?.[typ] || "–"}
+                        <input key={typ} type="number" step="any" min="0" max="999"placeholder={r.targetHours?.[typ] || "–"}
                           value={(ov[typ] ?? "") === 0 ? "" : (ov[typ] ?? "")}
                           onChange={e => setDayOverride(r.id, dow, typ, e.target.value)}
                           style={{ ...inputStyle, borderColor: "#FDE68A", background: "#FFFDE7", color: "#78350F", width: "100%" }} />
                       ))}
-                      <input type="number" min="0" max="999" placeholder={r.dailyTargetHours || "–"}
+                      <input type="number" step="any" min="0" max="999"placeholder={r.dailyTargetHours || "–"}
                         value={(ov.total ?? "") === 0 ? "" : (ov.total ?? "")}
                         onChange={e => setDayOverride(r.id, dow, "total", e.target.value)}
                         style={{ ...inputStyle, borderColor: "#A7F3D0", background: "#ECFDF5", color: "#059669", width: "100%" }} />
@@ -2915,7 +2924,7 @@ function ZeitkontoModal({ emp, shifts, onClose }) {
   );
 }
 
-function ManagerView({ marketId, onMarketChange, isAdmin, employees, availability, shifts, absences, weekStart, weekDates, onWeekChange, onAddShift, onDelShift, onAddEmployee, onDeleteEmployee, onUpdateEmployee, onImportAvailability, deliveryConfig, onUpdateDelivery, roles, thresholds, marketHours, onUpdateRoles, onUpdateMarketHours, onBulkAddShifts, onReplaceShifts, onLogout, onResetData, managerCreds, onUpdateManagerCreds, deadlineDaysByMarket, onUpdateDeadlineDaysByMarket, onDownloadBackup, onNotifyEmployees }) {
+function ManagerView({ marketId, onMarketChange, isAdmin, employees, availability, shifts, absences, weekStart, weekDates, onWeekChange, onAddShift, onDelShift, onAddEmployee, onDeleteEmployee, onUpdateEmployee, onImportAvailability, deliveryConfig, onUpdateDelivery, roles, thresholds, marketHours, onUpdateRoles, onUpdateMarketHours, onBulkAddShifts, onReplaceShifts, onImportAbsences, onLogout, onResetData, managerCreds, onUpdateManagerCreds, deadlineDaysByMarket, onUpdateDeadlineDaysByMarket, onDownloadBackup, onNotifyEmployees }) {
   const [notifyState, setNotifyState] = useState("idle"); // idle | sending | done | error
   const [notifyErrorMsg, setNotifyErrorMsg] = useState("");
   // Sammelt die employeeIds, deren Schichten seit der letzten Benachrichtigung
@@ -3026,7 +3035,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
 
   function addEmp() {
     if (!newEmpName.trim() || !newEmpPw) return;
-    onAddEmployee(newEmpName.trim(), newEmpPw, newEmpHours ? parseInt(newEmpHours) : null, newEmpRoles);
+    onAddEmployee(newEmpName.trim(), newEmpPw, newEmpHours ? parseFloat(String(newEmpHours).replace(",", ".")) : null, newEmpRoles);
     setShowAddEmp(false); setNewEmpName(""); setNewEmpPw(""); setNewEmpHours(""); setNewEmpRoles([]);
     flash("✓ Mitarbeiter angelegt");
   }
@@ -3037,7 +3046,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
 
   function saveEditEmp() {
     if (!editEmp) return;
-    const changes = { weeklyHours: editEmp.weeklyHours ? parseInt(editEmp.weeklyHours) : null, defaultRoles: editEmp.defaultRoles ?? [], isMarktleiter: !!editEmp.isMarktleiter, isSchliessKraft: !!editEmp.isSchliessKraft, isFestangestellt: !!editEmp.isFestangestellt };
+    const changes = { weeklyHours: editEmp.weeklyHours ? parseFloat(String(editEmp.weeklyHours).replace(",", ".")) : null, defaultRoles: editEmp.defaultRoles ?? [], isMarktleiter: !!editEmp.isMarktleiter, isSchliessKraft: !!editEmp.isSchliessKraft, isFestangestellt: !!editEmp.isFestangestellt };
     if (editEmp.newPassword?.trim()) { changes.password = editEmp.newPassword.trim(); changes.mustChangePw = true; }
     onUpdateEmployee(editEmp.id, changes);
     setEditEmp(null);
@@ -3935,7 +3944,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                 onChange={e => setNewEmpPw(e.target.value)} />
             </div>
             <div className="field"><label>Wochenstunden-Soll (optional)</label>
-              <input type="number" placeholder="z.B. 35" min="1" max="48" value={newEmpHours}
+              <input type="number" step="any" placeholder="z.B. 37,5" min="1" max="48" value={newEmpHours}
                 onChange={e => setNewEmpHours(e.target.value)}
                 onKeyDown={e => e.key === "Enter" && addEmp()} />
             </div>
@@ -4008,7 +4017,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
               </label>
             </div>
             <div className="field"><label>Wochenstunden-Soll</label>
-              <input type="number" placeholder="z.B. 40" min="1" max="48" value={editEmp.weeklyHours}
+              <input type="number" step="any" placeholder="z.B. 37,5" min="1" max="48" value={editEmp.weeklyHours}
                 onChange={e => setEditEmp(p => ({ ...p, weeklyHours: e.target.value }))} />
             </div>
             {roles.length > 0 && (
@@ -4073,10 +4082,11 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
 
       {showImportPlan && (
         <ImportPlanModal marketId={marketId} employees={employees} roles={roles} existingShifts={shifts}
-          onImport={(newShifts, empIds, dates) => {
+          onImport={(newShifts, empIds, dates, newAbsences = []) => {
             empIds.forEach(trackShiftChange);
             onReplaceShifts(newShifts, empIds, dates);
-            flash(`✓ ${newShifts.length} Schichten importiert`);
+            if (newAbsences.length > 0) onImportAbsences(newAbsences);
+            flash(`✓ ${newShifts.length} Schichten${newAbsences.length > 0 ? ` und ${newAbsences.length} Urlaubstage` : ""} importiert`);
           }}
           onClose={() => setShowImportPlan(false)} />
       )}
