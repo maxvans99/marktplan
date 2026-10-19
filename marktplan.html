@@ -475,7 +475,7 @@ function reportCloudError(e) {
 // ─── PERSISTENZ (localStorage) ───────────────────────────────────────────────
 const LS_PREFIX  = "marktplan:";
 const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
-const APP_BUILD  = "20261019-2"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
+const APP_BUILD  = "20261019-3"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
 
 function clearAllPersistedState() {
   try {
@@ -1541,6 +1541,7 @@ function Sidebar({ role, marketId, isAdmin, onMarketChange, onLogout, empName, o
       </div>
       <div className="sb-footer">
         <div className="sb-logout" onClick={onLogout}>← Abmelden</div>
+        <div style={{ fontSize: 10, color: "#64748B", textAlign: "center", marginTop: 8 }}>Version {APP_BUILD}</div>
         {CLOUD_ENABLED && <CloudBadge />}
       </div>
       {showResetModal && (
