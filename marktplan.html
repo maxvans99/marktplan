@@ -479,7 +479,7 @@ function reportCloudError(e) {
 // ─── PERSISTENZ (localStorage) ───────────────────────────────────────────────
 const LS_PREFIX  = "marktplan:";
 const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
-const APP_BUILD  = "20261021-2"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
+const APP_BUILD  = "20261022-1"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
 
 function clearAllPersistedState() {
   try {
@@ -1891,6 +1891,61 @@ const NON_SHIFT_TOKENS = new Set(["---", "-", ".", "×", "x"]);
 
 function pad2(n) { return String(n).padStart(2, "0"); }
 
+const WEEKDAY_IDX = { So: 0, Mo: 1, Di: 2, Mi: 3, Do: 4, Fr: 5, Sa: 6 };
+const MONTH_WORDS = [["januar", "jan"], ["februar", "feb"], ["märz", "maerz", "mär", "mrz"], ["april", "apr"], ["mai"], ["juni", "jun"],
+  ["juli", "jul"], ["august", "aug"], ["september", "sept", "sep"], ["oktober", "okt"], ["november", "nov"], ["dezember", "dez"]];
+
+// Alle Monatsnamen (auch Kurzformen) in Reihenfolge ihres Auftretens, z. B. "Oktober - November" → [9, 10]
+function findMonthsInText(text) {
+  const out = [];
+  const re = /(?<![a-zäöü])(januar|februar|märz|maerz|april|mai|juni|juli|august|september|oktober|november|dezember|sept|jan|feb|mär|mrz|apr|jun|jul|aug|sep|okt|nov|dez)(?![a-zäöü])/gi;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    const idx = MONTH_WORDS.findIndex(ws => ws.includes(m[1].toLowerCase()));
+    if (idx >= 0) out.push(idx);
+  }
+  return out;
+}
+
+// Ordnet jeder Spalte ein Datum zu; fällt die Tageszahl (31 → 1), beginnt ein neuer Monat (ggf. neues Jahr).
+function assignPlanDates(dayCols, year, startMonth) {
+  let m = startMonth, y = year, prev = null;
+  return dayCols.map(c => {
+    if (prev != null && c.dayNum < prev) { m++; if (m > 11) { m = 0; y++; } }
+    prev = c.dayNum;
+    return `${y}-${pad2(m + 1)}-${pad2(c.dayNum)}`;
+  });
+}
+
+function planDatesMatchWeekdays(dayCols, dates) {
+  return dayCols.every((c, i) => {
+    const [yy, mm, dd] = dates[i].split("-").map(Number);
+    return new Date(yy, mm - 1, dd).getDay() === WEEKDAY_IDX[c.weekday];
+  });
+}
+
+// Ergebnis: Array mit einem ISO-Datum pro Spalte — oder null, wenn nichts zu den Wochentagen passt.
+function resolvePlanPeriod(dayCols, headerText, allText) {
+  const months = findMonthsInText(headerText);
+  const years = (headerText.match(/(?<!\d)20\d{2}(?!\d)/g) || []).map(Number);
+  const candidates = [];
+  if (months.length && years.length) candidates.push({ year: years[0], month: months[0] });
+  const pd = allText.match(/(\d{1,2})\.(\d{1,2})\.(20\d{2})/); // Druckdatum aus der Fußzeile
+  if (pd) {
+    for (const off of [0, 1, -1, 2, -2, 3, -3]) {
+      const d = new Date(+pd[3], +pd[2] - 1 + off, 1);
+      candidates.push({ year: d.getFullYear(), month: d.getMonth() });
+    }
+  } else if (years.length && !months.length) {
+    for (let mth = 0; mth < 12; mth++) candidates.push({ year: years[0], month: mth });
+  }
+  for (const c of candidates) {
+    const dates = assignPlanDates(dayCols, c.year, c.month);
+    if (planDatesMatchWeekdays(dayCols, dates)) return dates;
+  }
+  return null;
+}
+
 async function parsePlanPdf(arrayBuffer) {
   if (!window.pdfjsLib) throw new Error("PDF-Bibliothek nicht geladen (keine Internetverbindung?).");
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
@@ -1916,20 +1971,6 @@ async function parsePlanPdf(arrayBuffer) {
     lines.forEach(l => l.items.sort((a, b) => a.x - b.x));
     lines.sort((a, b) => b.y - a.y); // von oben nach unten
 
-    // Jahr/Monat aus Kopfzeile ("2026" + "September")
-    let year = null, monthIdx = null;
-    for (const l of lines.slice(0, 4)) {
-      for (const it of l.items) {
-        if (/^\d{4}$/.test(it.str)) year = parseInt(it.str);
-        const mi = MONTH_NAMES_DE.indexOf(it.str.toLowerCase());
-        if (mi >= 0) monthIdx = mi;
-      }
-    }
-    if (year == null || monthIdx == null) {
-      warnings.push(`Seite ${pageNum}: Jahr/Monat in der Kopfzeile nicht gefunden — Seite übersprungen.`);
-      continue;
-    }
-
     // Wochentag-Kopfzeile finden ("Mo 14", "Di 15", ...) → x-Anker + Datum pro Spalte
     let dayCols = null;
     for (const l of lines) {
@@ -1944,9 +1985,19 @@ async function parsePlanPdf(arrayBuffer) {
       warnings.push(`Seite ${pageNum}: Wochentag-Kopfzeile nicht erkannt — Seite übersprungen.`);
       continue;
     }
-    const dayAnchors = dayCols.map(c => ({
+    // Zeitraum (Jahr/Monat, auch über Monats-/Jahreswechsel) aus Kopfzeile, sonst aus dem Druckdatum;
+    // jedes Ergebnis wird gegen die Wochentage (Mo, Di, ...) geprüft.
+    const headerYForPeriod = lines.find(l => l.items.some(it => /^(Mo|Di|Mi|Do|Fr|Sa|So)\s+\d{1,2}$/.test(it.str)))?.y ?? Infinity;
+    const headerText = lines.filter(l => l.y > headerYForPeriod).map(l => l.items.map(it => it.str).join(" ")).join(" | ");
+    const allText = items.map(it => it.str).join(" ");
+    const period = resolvePlanPeriod(dayCols, headerText, allText);
+    if (!period) {
+      warnings.push(`Seite ${pageNum}: Datum nicht sicher erkannt — Seite übersprungen. Gelesene Kopfzeile: "${headerText.slice(0, 120)}", Tage: ${dayCols.map(c => c.weekday + " " + c.dayNum).join(", ")}`);
+      continue;
+    }
+    const dayAnchors = dayCols.map((c, i) => ({
       x: c.x, dayNum: c.dayNum,
-      date: `${year}-${pad2(monthIdx + 1)}-${pad2(c.dayNum)}`,
+      date: period[i],
     }));
     const colWidth = dayAnchors.length > 1 ? (dayAnchors[1].x - dayAnchors[0].x) : 80;
     const nameColMaxX = dayAnchors[0].x - colWidth * 0.5;
