@@ -479,7 +479,7 @@ function reportCloudError(e) {
 // ─── PERSISTENZ (localStorage) ───────────────────────────────────────────────
 const LS_PREFIX  = "marktplan:";
 const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
-const APP_BUILD  = "20261022-2"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
+const APP_BUILD  = "20261022-4"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
 
 function clearAllPersistedState() {
   try {
@@ -546,6 +546,20 @@ function mergeLocalIntoRemote(remote, local) {
   return local != null && !isEmptyData(local) ? local : remote;
 }
 
+// Passwort-Schutz für die Mitarbeiterliste: Pro Mitarbeiter gewinnt der Passwort-Stand mit dem neueren
+// pwUpdatedAt. Ein Gerät mit veraltetem Speicher kann so kein neueres Passwort mehr überschreiben.
+function mergePasswordState(remote, local) {
+  if (!Array.isArray(remote) || !Array.isArray(local)) return local;
+  const rm = new Map(remote.map(e => [e && e.id, e]));
+  return local.map(e => {
+    const r = e && rm.get(e.id);
+    if (r && (r.pwUpdatedAt ?? 0) > (e.pwUpdatedAt ?? 0)) {
+      return { ...e, passwordHash: r.passwordHash, mustChangePw: r.mustChangePw, pwUpdatedAt: r.pwUpdatedAt };
+    }
+    return e;
+  });
+}
+
 function usePersistedState(key, initial) {
   const [val, setVal] = useState(() => loadLS(key, initial));
   const skipWrite = useRef(false);
@@ -587,6 +601,7 @@ function usePersistedState(key, initial) {
             const remoteWins = key === "adminPwHash" || key === "managerCreds" || key === "pushTokens";
             if (firstSync && dirtyPreSync.current && !remoteWins) {
               next = mergeLocalIntoRemote(remote, cur);
+              if (key === "employees") next = mergePasswordState(remote, next);
               dirtyPreSync.current = false;
               // "undefined"-Felder entfernen, bevor es zurück in die Cloud geht (siehe Schreib-Effekt weiter unten)
               try { next = JSON.parse(JSON.stringify(next)); } catch {}
@@ -644,7 +659,19 @@ function usePersistedState(key, initial) {
       }).catch(e => { reportCloudError(e); console.warn("Cloud-Schreibschutz:", key, "— Live-Prüfung fehlgeschlagen, Schreiben abgebrochen."); });
       return;
     }
-    try { ref.set({ data: cleanVal }).catch(e => reportCloudError(e)); } catch (e) { reportCloudError(e); }
+    try {
+      if (key === "employees") {
+        // Erst den aktuellen Cloud-Stand lesen und Passwörter nach Zeitstempel schützen (Transaktion).
+        // Schlägt das fehl (z. B. offline), wird wie bisher direkt geschrieben.
+        db.runTransaction(async tx => {
+          const snap = await tx.get(ref);
+          const remote = snap.exists ? snap.data().data : null;
+          tx.set(ref, { data: mergePasswordState(remote, cleanVal) });
+        }).catch(() => ref.set({ data: cleanVal }).catch(e => reportCloudError(e)));
+      } else {
+        ref.set({ data: cleanVal }).catch(e => reportCloudError(e));
+      }
+    } catch (e) { reportCloudError(e); }
     if (!isEmptyData(cleanVal)) remoteHadData.current = true;
   }, [key, val]);
 
@@ -912,7 +939,7 @@ function App({ onSessionChange, logoutTick }) {
     setEmployees(p => p.map(e => {
       if (e.id !== myEmployeeId) return e;
       const { password: _old, ...base } = e;
-      return { ...base, passwordHash, mustChangePw: false };
+      return { ...base, passwordHash, mustChangePw: false, pwUpdatedAt: Date.now() };
     }));
     setPage("employee");
   }
@@ -1127,7 +1154,7 @@ function App({ onSessionChange, logoutTick }) {
           setEmployees(p => p.map(e => {
             if (e.id !== myEmployeeId) return e;
             const { password: _old, ...base } = e;
-            return { ...base, passwordHash };
+            return { ...base, passwordHash, pwUpdatedAt: Date.now() };
           }));
         }}
       />
@@ -1156,13 +1183,13 @@ function App({ onSessionChange, logoutTick }) {
       onAddEmployee={async (name, pw, wh, defRoles) => {
         const id = uid();
         const passwordHash = await hashPw(pw, String(id));
-        setEmployees(p => [...p, { id, name, marketId, passwordHash, mustChangePw: true, weeklyHours: wh || null, defaultRoles: defRoles ?? [] }]);
+        setEmployees(p => [...p, { id, name, marketId, passwordHash, mustChangePw: true, pwUpdatedAt: Date.now(), weeklyHours: wh || null, defaultRoles: defRoles ?? [] }]);
       }}
       onUpdateEmployee={async (id, changes) => {
         if (changes.password) {
           const passwordHash = await hashPw(changes.password, String(id));
           const { password: _pw, ...rest } = changes;
-          changes = { ...rest, passwordHash };
+          changes = { ...rest, passwordHash, pwUpdatedAt: Date.now() };
         }
         setEmployees(p => p.map(e => {
           if (e.id !== id) return e;
@@ -4247,6 +4274,48 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
   );
 }
 
+    // Prüft regelmäßig, ob eine neuere App-Version ausgeliefert wird. Nicht eingeloggt → automatisch neu laden;
+    // eingeloggt → Hinweis mit Button (damit keine halb ausgefüllte Eingabe verloren geht).
+    function VersionWatcher({ active }) {
+      const [outdated, setOutdated] = React.useState(null);
+      React.useEffect(() => {
+        if (!/^https?:$/.test(location.protocol)) return;
+        let stopped = false;
+        async function check() {
+          try {
+            const r = await fetch(location.pathname + "?v=" + Date.now(), { cache: "no-store" });
+            if (!r.ok) return;
+            const m = (await r.text()).match(/APP_BUILD\s*=\s*"([^"]+)"/);
+            if (!m || stopped) return;
+            setOutdated(m[1] !== APP_BUILD ? m[1] : null);
+          } catch {}
+        }
+        check();
+        const iv = setInterval(check, 5 * 60 * 1000);
+        const onVis = () => { if (document.visibilityState === "visible") check(); };
+        document.addEventListener("visibilitychange", onVis);
+        window.addEventListener("focus", check);
+        return () => { stopped = true; clearInterval(iv); document.removeEventListener("visibilitychange", onVis); window.removeEventListener("focus", check); };
+      }, []);
+      React.useEffect(() => {
+        if (!outdated || active) return;
+        // Pro neuer Version nur ein automatischer Reload (verhindert Schleifen, falls das CDN kurz noch die alte Datei liefert)
+        try {
+          if (sessionStorage.getItem("marktplan:autoReloaded") === outdated) return;
+          sessionStorage.setItem("marktplan:autoReloaded", outdated);
+        } catch {}
+        location.reload();
+      }, [outdated, active]);
+      if (!outdated || !active) return null;
+      return (
+        <div style={{ position: "fixed", left: 12, right: 12, bottom: 12, zIndex: 9998, background: "#1D4ED8", color: "#fff", borderRadius: 12,
+          padding: "12px 16px", display: "flex", alignItems: "center", gap: 12, justifyContent: "space-between", boxShadow: "0 6px 24px rgba(0,0,0,.25)", fontSize: 13 }}>
+          <span>🔄 Eine neue Version von MarktPlan ist verfügbar. Bitte nach dem Speichern aktualisieren.</span>
+          <button onClick={() => location.reload()} style={{ background: "#fff", color: "#1D4ED8", border: "none", borderRadius: 8, padding: "7px 14px", fontWeight: 700, cursor: "pointer", flexShrink: 0 }}>Jetzt aktualisieren</button>
+        </div>
+      );
+    }
+
     function Root() {
       const [session, setSession] = React.useState({ active: false, limitMin: 15 });
       const [logoutTick, setLogoutTick] = React.useState(0);
@@ -4255,6 +4324,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
           <CloudErrorBanner />
           <App onSessionChange={setSession} logoutTick={logoutTick} />
           <IdleGuard active={session.active} limitMin={session.limitMin} onTimeout={() => setLogoutTick(t => t + 1)} />
+          <VersionWatcher active={session.active} />
         </>
       );
     }
