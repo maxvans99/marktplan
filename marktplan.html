@@ -479,7 +479,7 @@ function reportCloudError(e) {
 // ─── PERSISTENZ (localStorage) ───────────────────────────────────────────────
 const LS_PREFIX  = "marktplan:";
 const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
-const APP_BUILD  = "20261022-6"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
+const APP_BUILD  = "20261028-1"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
 
 function clearAllPersistedState() {
   try {
@@ -1232,8 +1232,16 @@ function App({ onSessionChange, logoutTick }) {
       marketHours={mktRolesConfig.marketHours}
       onUpdateRoles={(roles, thresholds, marketHours) => setRolesConfig(p => ({ ...p, [marketId]: { ...p[marketId] ?? {}, roles, thresholds, marketHours } }))}
       onBulkAddShifts={newShifts => setShifts(p => [...p, ...newShifts])}
-      onImportAbsences={newAbs => setAbsences(p => [
-        ...p.filter(a => !newAbs.some(n => n.employeeId === a.employeeId && n.date === a.date)),
+      onSetAbsence={(empId, date, note) => setAbsences(p => [
+        ...p.filter(a => !(a.employeeId === empId && a.date === date)),
+        { id: uid(), employeeId: empId, date, note },
+      ])}
+      onDelAbsence={(empId, date) => setAbsences(p => p.filter(a => !(a.employeeId === empId && a.date === date)))}
+      /* Import: Einträge aus früheren Importen (src "import") der betroffenen Mitarbeiter/Tage werden ersetzt;
+         von Hand eingetragene bleiben, außer sie liegen auf demselben Tag wie ein neuer Eintrag. */
+      onImportAbsences={(newAbs, empIds = [], dates = []) => setAbsences(p => [
+        ...p.filter(a => !newAbs.some(n => n.employeeId === a.employeeId && n.date === a.date)
+          && !(a.src === "import" && empIds.includes(a.employeeId) && dates.includes(a.date))),
         ...newAbs,
       ])}
       onReplaceShifts={(newShifts, empIds, dates) => setShifts(p => [
@@ -2242,7 +2250,15 @@ function ImportPlanModal({ marketId, employees, roles, existingShifts, onImport,
     setLoading(false);
   }
 
-  const isUrlaub = c => c.empty && /urlaub/i.test(c.label || "");
+  // Abwesenheit im PDF: "Urlaub" oder "FZ" (Freizeitausgleich) in einer Zelle ohne Uhrzeit
+  const absType = c => {
+    if (!c.empty) return null;
+    const l = c.label || "";
+    if (/urlaub/i.test(l)) return "Urlaub";
+    if (/(^|[^A-Za-zÄÖÜäöüß])FZ($|[^A-Za-zÄÖÜäöüß])/.test(l)) return "FZ";
+    return null;
+  };
+  const isUrlaub = c => !!absType(c);
   const shiftCount = rows ? rows.reduce((n, r) => n + r.cells.filter(c => !c.empty).length, 0) : 0;
   const urlaubCount = rows ? rows.reduce((n, r) => n + r.cells.filter(isUrlaub).length, 0) : 0;
   const unmatchedCount = rows ? rows.filter((_, i) => !matches[i]).length : 0; // nur relevant, falls jemand im Dropdown "—" wählt
@@ -2278,7 +2294,7 @@ function ImportPlanModal({ marketId, employees, roles, existingShifts, onImport,
       if (!empId) return;
       const baseRole = matchRoleForSection(r.section, roles);
       r.cells.forEach(c => {
-        if (isUrlaub(c)) { newAbsences.push({ id: uid(), employeeId: empId, date: c.date, note: "Urlaub" }); return; }
+        if (isUrlaub(c)) { newAbsences.push({ id: uid(), employeeId: empId, date: c.date, note: absType(c), src: "import" }); return; }
         if (c.empty) return;
         const cellRole = refineRoleForCell(baseRole, roles, c.note);
         newShifts.push({
@@ -2317,7 +2333,7 @@ function ImportPlanModal({ marketId, employees, roles, existingShifts, onImport,
         {rows && (
           <>
             <div style={{ fontSize: 13, color: "#475569", margin: "14px 0 10px" }}>
-              <b>{rows.length}</b> angelegte Mitarbeiter erkannt, <b>{shiftCount}</b> Schichten{urlaubCount > 0 ? <> und <b>{urlaubCount}</b> Urlaubstage</> : ""} gefunden.
+              <b>{rows.length}</b> angelegte Mitarbeiter erkannt, <b>{shiftCount}</b> Schichten{urlaubCount > 0 ? <> und <b>{urlaubCount}</b> Abwesenheitstage (FZ/Urlaub)</> : ""} gefunden.
               {replaceCount > 0 && <div style={{ color: "#B45309", fontWeight: 700, marginTop: 4 }}>⚠ {replaceCount} bereits vorhandene Schichten dieser Mitarbeiter in diesem Zeitraum werden durch den Import ersetzt.</div>}
               {skippedNames.length > 0 && <div style={{ color: "#94A3B8", marginTop: 4 }}>{skippedNames.length} Zeilen ausgelassen (Mitarbeiter in MarktPlan nicht angelegt).</div>}
               {unmatchedCount > 0 && <span style={{ color: "#DC2626", fontWeight: 700 }}> {unmatchedCount} ohne Mitarbeiter-Zuordnung — bitte auswählen.</span>}
@@ -2344,7 +2360,7 @@ function ImportPlanModal({ marketId, employees, roles, existingShifts, onImport,
                       <option value="">— Mitarbeiter wählen{r.rawName ? ` (erkannt: "${r.rawName}")` : " (kein Name erkannt)"} —</option>
                       {mktEmps.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
                     </select>
-                    <div style={{ fontSize: 12, color: "#475569" }}>{n} Schicht{n === 1 ? "" : "en"}{urlaubTage > 0 ? `, ${urlaubTage} Urlaubstag${urlaubTage === 1 ? "" : "e"}` : ""}{skipped.length > 0 ? `, übersprungen: ${skipped.join(", ")}` : ""}</div>
+                    <div style={{ fontSize: 12, color: "#475569" }}>{n} Schicht{n === 1 ? "" : "en"}{urlaubTage > 0 ? `, ${[["FZ", r.cells.filter(c => absType(c) === "FZ").length], ["Urlaub", r.cells.filter(c => absType(c) === "Urlaub").length]].filter(x => x[1] > 0).map(x => `${x[1]} ${x[0]}`).join(", ")}` : ""}{skipped.length > 0 ? `, übersprungen: ${skipped.join(", ")}` : ""}</div>
                   </div>
                 );
               })}
@@ -2354,7 +2370,7 @@ function ImportPlanModal({ marketId, employees, roles, existingShifts, onImport,
 
         <div className="macts">
           <button className="btn-cancel" onClick={onClose}>Abbrechen</button>
-          {rows && <button className="btn-ok" disabled={shiftCount + urlaubCount === 0 || multiAssigned.length > 0} onClick={handleImportClick}>Übernehmen ({shiftCount} Schichten{urlaubCount > 0 ? `, ${urlaubCount} Urlaubstage` : ""})</button>}
+          {rows && <button className="btn-ok" disabled={shiftCount + urlaubCount === 0 || multiAssigned.length > 0} onClick={handleImportClick}>Übernehmen ({shiftCount} Schichten{urlaubCount > 0 ? `, ${urlaubCount} Abwesenheitstage` : ""})</button>}
         </div>
       </div>
     </div>
@@ -2939,7 +2955,7 @@ function ZeitkontoModal({ emp, shifts, onClose }) {
   );
 }
 
-function ManagerView({ marketId, onMarketChange, isAdmin, employees, availability, shifts, absences, weekStart, weekDates, onWeekChange, onAddShift, onDelShift, onAddEmployee, onDeleteEmployee, onUpdateEmployee, deliveryConfig, onUpdateDelivery, roles, thresholds, marketHours, onUpdateRoles, onUpdateMarketHours, onBulkAddShifts, onReplaceShifts, onImportAbsences, onLogout, onResetData, managerCreds, onUpdateManagerCreds, deadlineDaysByMarket, onUpdateDeadlineDaysByMarket, onDownloadBackup, onNotifyEmployees }) {
+function ManagerView({ marketId, onMarketChange, isAdmin, employees, availability, shifts, absences, weekStart, weekDates, onWeekChange, onAddShift, onDelShift, onAddEmployee, onDeleteEmployee, onUpdateEmployee, deliveryConfig, onUpdateDelivery, roles, thresholds, marketHours, onUpdateRoles, onUpdateMarketHours, onBulkAddShifts, onReplaceShifts, onImportAbsences, onSetAbsence, onDelAbsence, onLogout, onResetData, managerCreds, onUpdateManagerCreds, deadlineDaysByMarket, onUpdateDeadlineDaysByMarket, onDownloadBackup, onNotifyEmployees }) {
   const [notifyState, setNotifyState] = useState("idle"); // idle | sending | done | error
   const [notifyErrorMsg, setNotifyErrorMsg] = useState("");
   // Sammelt die employeeIds, deren Schichten seit der letzten Benachrichtigung
@@ -2979,6 +2995,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
   }
   const [sbOpen, setSbOpen] = useState(false);
   const [modal, setModal] = useState(null);
+  const [absNote, setAbsNote] = useState("");
   const [delEmpModal, setDelEmpModal] = useState(null);
   const [showAddEmp, setShowAddEmp] = useState(false);
   const [showImportPlan, setShowImportPlan] = useState(false);
@@ -3076,7 +3093,25 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
     setShiftEnd(sh?.endTime ?? av?.endTime ?? "16:00");
     setShiftRoles(sh ? (sh.roles ?? (sh.role ? [sh.role] : [])) : []);
     setTimeErr("");
+    setAbsNote(absence?.note ?? "");
     setModal({ emp, date: ds, av, sh, absence });
+  }
+
+  // Marktleitung trägt Abwesenheit (FZ, Urlaub, Krank, ...) für diesen Tag ein. Eine Schicht am selben Tag entfällt dann.
+  function saveAbsenceForDay() {
+    const note = absNote.trim();
+    if (!note) return;
+    if (modal.sh) delShiftTracked(modal.sh.id);
+    trackShiftChange(modal.emp.id);
+    onSetAbsence(modal.emp.id, modal.date, note);
+    setModal(null);
+    flash(`✓ ${note} eingetragen${modal.sh ? " – Schicht entfernt" : ""}`);
+  }
+  function removeAbsenceForDay() {
+    trackShiftChange(modal.emp.id);
+    onDelAbsence(modal.emp.id, modal.date);
+    setModal(null);
+    flash("✓ Abwesenheit entfernt");
   }
 
   function toggleRole(name) {
@@ -3834,6 +3869,24 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
               })}
             </div>
             {timeErr && <div className="auth-error" style={{ marginBottom: 12 }}>{timeErr}</div>}
+            <div style={{ marginBottom: 14, paddingTop: 12, borderTop: "1px solid #E2E8F0" }}>
+              <div style={{ marginBottom: 6, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em", color: "#475569" }}>
+                Abwesenheit eintragen <span style={{ fontWeight: 400, color: "#94A3B8", textTransform: "none", letterSpacing: 0 }}>(statt Schicht)</span>
+              </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+                {["FZ", "Urlaub", "Krank"].map(t => (
+                  <button key={t} className="role-chip" onClick={() => setAbsNote(t)}
+                    style={{ padding: "5px 12px", borderRadius: 7, border: "1.5px solid", borderColor: absNote === t ? "#DC2626" : "#E2E8F0", background: absNote === t ? "#FEF2F2" : "#fff", color: absNote === t ? "#DC2626" : "#64748B", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>{t}</button>
+                ))}
+              </div>
+              <input type="text" maxLength={60} value={absNote} onChange={e => setAbsNote(e.target.value)} placeholder="oder eigener Grund"
+                style={{ width: "100%", boxSizing: "border-box", padding: "8px 12px", border: "1.5px solid #E2E8F0", borderRadius: 8, fontSize: 14, color: "#1E293B", outline: "none", marginBottom: 8 }} />
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="btn-cancel" style={{ flex: 1, color: "#DC2626", borderColor: "#FECACA" }} disabled={!absNote.trim()} onClick={saveAbsenceForDay}>🚫 Als abwesend eintragen</button>
+                {modal.absence && <button className="btn-cancel" style={{ flex: 1 }} onClick={removeAbsenceForDay}>Abwesenheit entfernen</button>}
+              </div>
+              {modal.sh && <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 6 }}>Die vorhandene Schicht an diesem Tag wird dabei entfernt.</div>}
+            </div>
             <div className="macts">
               <button className="btn-cancel" onClick={() => setModal(null)}>Abbrechen</button>
               {modal.sh && <button className="btn-del" onClick={() => { delShiftTracked(modal.sh.id); setModal(null); flash("✓ Schicht gelöscht"); }}>Löschen</button>}
@@ -4093,8 +4146,8 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
           onImport={(newShifts, empIds, dates, newAbsences = []) => {
             empIds.forEach(trackShiftChange);
             onReplaceShifts(newShifts, empIds, dates);
-            if (newAbsences.length > 0) onImportAbsences(newAbsences);
-            flash(`✓ ${newShifts.length} Schichten${newAbsences.length > 0 ? ` und ${newAbsences.length} Urlaubstage` : ""} importiert`);
+            onImportAbsences(newAbsences, empIds, dates);
+            flash(`✓ ${newShifts.length} Schichten${newAbsences.length > 0 ? ` und ${newAbsences.length} Abwesenheitstage` : ""} importiert`);
           }}
           onClose={() => setShowImportPlan(false)} />
       )}
