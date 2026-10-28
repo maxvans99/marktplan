@@ -479,7 +479,7 @@ function reportCloudError(e) {
 // ─── PERSISTENZ (localStorage) ───────────────────────────────────────────────
 const LS_PREFIX  = "marktplan:";
 const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
-const APP_BUILD  = "20261028-1"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
+const APP_BUILD  = "20261028-4"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
 
 function clearAllPersistedState() {
   try {
@@ -2138,7 +2138,8 @@ async function parsePlanPdf(arrayBuffer) {
         const timeLine = colLines.find(s => TIME_RANGE_RE.test(s));
         const otherLines = colLines.filter(s => s !== timeLine && !/^\d{1,2}:\d{2}$/.test(s));
         if (!timeLine) {
-          const label = colLines.filter(s => !NON_SHIFT_TOKENS.has(s)).join(" / ");
+          // "X" bzw. "×" (Abwesenheitsmarke) bleibt als Beschriftung erhalten, die übrigen Platzhalter fallen weg
+          const label = colLines.filter(s => !NON_SHIFT_TOKENS.has(s) || /^[x×]$/i.test(s)).join(" / ");
           return { date: dayAnchors[i].date, empty: true, label: label || null };
         }
         const m = timeLine.match(TIME_RANGE_RE);
@@ -2254,8 +2255,10 @@ function ImportPlanModal({ marketId, employees, roles, existingShifts, onImport,
   const absType = c => {
     if (!c.empty) return null;
     const l = c.label || "";
-    if (/urlaub/i.test(l)) return "Urlaub";
+    if (/urlaub/i.test(l) || l.split(" / ").some(p => /^u$/i.test(p.trim()))) return "Urlaub"; // "U" = Urlaub
+    if (/berufsschule/i.test(l)) return "Berufsschule";
     if (/(^|[^A-Za-zÄÖÜäöüß])FZ($|[^A-Za-zÄÖÜäöüß])/.test(l)) return "FZ";
+    if (l.split(" / ").some(p => /^[x×]$/i.test(p.trim()))) return "Abwesend (X)";
     return null;
   };
   const isUrlaub = c => !!absType(c);
@@ -2333,7 +2336,7 @@ function ImportPlanModal({ marketId, employees, roles, existingShifts, onImport,
         {rows && (
           <>
             <div style={{ fontSize: 13, color: "#475569", margin: "14px 0 10px" }}>
-              <b>{rows.length}</b> angelegte Mitarbeiter erkannt, <b>{shiftCount}</b> Schichten{urlaubCount > 0 ? <> und <b>{urlaubCount}</b> Abwesenheitstage (FZ/Urlaub)</> : ""} gefunden.
+              <b>{rows.length}</b> angelegte Mitarbeiter erkannt, <b>{shiftCount}</b> Schichten{urlaubCount > 0 ? <> und <b>{urlaubCount}</b> Abwesenheitstage (FZ/Urlaub/Berufsschule/X)</> : ""} gefunden.
               {replaceCount > 0 && <div style={{ color: "#B45309", fontWeight: 700, marginTop: 4 }}>⚠ {replaceCount} bereits vorhandene Schichten dieser Mitarbeiter in diesem Zeitraum werden durch den Import ersetzt.</div>}
               {skippedNames.length > 0 && <div style={{ color: "#94A3B8", marginTop: 4 }}>{skippedNames.length} Zeilen ausgelassen (Mitarbeiter in MarktPlan nicht angelegt).</div>}
               {unmatchedCount > 0 && <span style={{ color: "#DC2626", fontWeight: 700 }}> {unmatchedCount} ohne Mitarbeiter-Zuordnung — bitte auswählen.</span>}
@@ -2360,7 +2363,7 @@ function ImportPlanModal({ marketId, employees, roles, existingShifts, onImport,
                       <option value="">— Mitarbeiter wählen{r.rawName ? ` (erkannt: "${r.rawName}")` : " (kein Name erkannt)"} —</option>
                       {mktEmps.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
                     </select>
-                    <div style={{ fontSize: 12, color: "#475569" }}>{n} Schicht{n === 1 ? "" : "en"}{urlaubTage > 0 ? `, ${[["FZ", r.cells.filter(c => absType(c) === "FZ").length], ["Urlaub", r.cells.filter(c => absType(c) === "Urlaub").length]].filter(x => x[1] > 0).map(x => `${x[1]} ${x[0]}`).join(", ")}` : ""}{skipped.length > 0 ? `, übersprungen: ${skipped.join(", ")}` : ""}</div>
+                    <div style={{ fontSize: 12, color: "#475569" }}>{n} Schicht{n === 1 ? "" : "en"}{urlaubTage > 0 ? `, ${["FZ", "Urlaub", "Berufsschule", "Abwesend (X)"].map(t => [t, r.cells.filter(c => absType(c) === t).length]).filter(x => x[1] > 0).map(x => `${x[1]} ${x[0]}`).join(", ")}` : ""}{skipped.length > 0 ? `, übersprungen: ${skipped.join(", ")}` : ""}</div>
                   </div>
                 );
               })}
@@ -3874,7 +3877,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                 Abwesenheit eintragen <span style={{ fontWeight: 400, color: "#94A3B8", textTransform: "none", letterSpacing: 0 }}>(statt Schicht)</span>
               </div>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
-                {["FZ", "Urlaub", "Krank"].map(t => (
+                {["FZ", "Urlaub", "Krank", "Berufsschule"].map(t => (
                   <button key={t} className="role-chip" onClick={() => setAbsNote(t)}
                     style={{ padding: "5px 12px", borderRadius: 7, border: "1.5px solid", borderColor: absNote === t ? "#DC2626" : "#E2E8F0", background: absNote === t ? "#FEF2F2" : "#fff", color: absNote === t ? "#DC2626" : "#64748B", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>{t}</button>
                 ))}
