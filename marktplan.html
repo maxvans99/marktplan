@@ -479,7 +479,7 @@ function reportCloudError(e) {
 // ─── PERSISTENZ (localStorage) ───────────────────────────────────────────────
 const LS_PREFIX  = "marktplan:";
 const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
-const APP_BUILD  = "20261028-4"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
+const APP_BUILD  = "20261109-2"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
 
 function clearAllPersistedState() {
   try {
@@ -1201,10 +1201,10 @@ function App({ onSessionChange, logoutTick }) {
       onNotifyEmployees={(empIds) => notifyEmployees(marketId, empIds)}
       onAddShift={s => setShifts(p => [...p, { ...s, id: uid() }])}
       onDelShift={id => setShifts(p => p.filter(s => s.id !== id))}
-      onAddEmployee={async (name, pw, wh, defRoles) => {
+      onAddEmployee={async (name, pw, wh, defRoles, isFest) => {
         const id = uid();
         const passwordHash = await hashPw(pw, String(id));
-        setEmployees(p => [...p, { id, name, marketId, passwordHash, mustChangePw: true, pwUpdatedAt: Date.now(), weeklyHours: wh || null, defaultRoles: defRoles ?? [] }]);
+        setEmployees(p => [...p, { id, name, marketId, passwordHash, mustChangePw: true, pwUpdatedAt: Date.now(), weeklyHours: wh || null, defaultRoles: defRoles ?? [], isFestangestellt: !!isFest }]);
       }}
       onUpdateEmployee={async (id, changes) => {
         if (changes.password) {
@@ -1259,6 +1259,41 @@ function App({ onSessionChange, logoutTick }) {
 // ─── LOGIN ────────────────────────────────────────────────────────────────────
 // Passwort-Eingabefeld mit Augen-Symbol zum Ein-/Ausblenden — verhindert Tippfehler
 // beim Vergeben neuer Passwörter (Admin, Marktleitung, Mitarbeiter-Ersteinrichtung).
+// Feste Abteilungen eines Mitarbeiters: das erste Element der Liste ist die Hauptabteilung, der Rest sind Nebenabteilungen.
+function RoleMainPicker({ roles, value, onChange }) {
+  const sel = value ?? [];
+  const toggle = rn => onChange(sel.includes(rn) ? sel.filter(x => x !== rn) : [...sel, rn]);
+  const makeMain = rn => onChange([rn, ...sel.filter(x => x !== rn)]);
+  return (
+    <div className="field">
+      <label>Feste Abteilung(en)</label>
+      <div className="role-chip-wrap" style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 4 }}>
+        {roles.map(r => {
+          const on = sel.includes(r.name);
+          const isMain = on && sel[0] === r.name;
+          return (
+            <label key={r.id} className="role-chip" style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer", fontSize: 13,
+              background: on ? r.color + "22" : "#F8FAFC", border: `1.5px solid ${on ? r.color : "#E2E8F0"}`,
+              borderRadius: 7, padding: "4px 10px", userSelect: "none" }}>
+              <input type="checkbox" checked={on} onChange={() => toggle(r.name)} style={{ accentColor: r.color }} />
+              <span style={{ fontWeight: 700, color: on ? r.color : "#64748B" }}>{r.name}</span>
+              {on && sel.length > 1 && (
+                <button type="button" title={isMain ? "Hauptabteilung" : "Als Hauptabteilung festlegen"}
+                  onClick={e => { e.preventDefault(); e.stopPropagation(); if (!isMain) makeMain(r.name); }}
+                  style={{ border: "none", borderRadius: 5, padding: "1px 6px", fontSize: 10, fontWeight: 800, cursor: isMain ? "default" : "pointer",
+                    background: isMain ? r.color : "#fff", color: isMain ? "#fff" : "#64748B", outline: isMain ? "none" : "1px solid #CBD5E1" }}>
+                  {isMain ? "★ Haupt" : "Neben"}
+                </button>
+              )}
+            </label>
+          );
+        })}
+      </div>
+      {sel.length > 1 && <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 6 }}>Hauptabteilung wird zuerst geplant, die Nebenabteilung nur bei Bedarf. Auf „Neben“ tippen, um die Hauptabteilung zu wechseln.</div>}
+    </div>
+  );
+}
+
 function PasswordInput({ value, onChange, placeholder, onKeyDown, autoFocus, style }) {
   const [show, setShow] = useState(false);
   return (
@@ -3012,6 +3047,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
   const [newEmpPw, setNewEmpPw] = useState("");
   const [newEmpHours, setNewEmpHours] = useState("");
   const [newEmpRoles, setNewEmpRoles] = useState([]);
+  const [newEmpFest, setNewEmpFest] = useState(false);
   const [editEmp, setEditEmp] = useState(null); // { id, name, weeklyHours, defaultRoles }
   const [autoPlanProposal, setAutoPlanProposal] = useState([]);
   const [editProposal, setEditProposal] = useState(null); // { shift, empName }
@@ -3069,18 +3105,18 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
 
   function addEmp() {
     if (!newEmpName.trim() || !newEmpPw) return;
-    onAddEmployee(newEmpName.trim(), newEmpPw, newEmpHours ? parseFloat(String(newEmpHours).replace(",", ".")) : null, newEmpRoles);
-    setShowAddEmp(false); setNewEmpName(""); setNewEmpPw(""); setNewEmpHours(""); setNewEmpRoles([]);
+    onAddEmployee(newEmpName.trim(), newEmpPw, newEmpHours ? parseFloat(String(newEmpHours).replace(",", ".")) : null, newEmpRoles, newEmpFest);
+    setShowAddEmp(false); setNewEmpName(""); setNewEmpPw(""); setNewEmpHours(""); setNewEmpRoles([]); setNewEmpFest(false);
     flash("✓ Mitarbeiter angelegt");
   }
 
-  function toggleNewEmpRole(rname) {
-    setNewEmpRoles(prev => prev.includes(rname) ? prev.filter(r => r !== rname) : [...prev, rname]);
-  }
+  const editEmpOrig = editEmp ? employees.find(e => e.id === editEmp.id) : null;
+  const editEmpNameTrim = (editEmp?.name ?? "").trim();
+  const editEmpNameDup = !!editEmp && editEmpNameTrim !== "" && employees.some(e => e.id !== editEmp.id && e.marketId === editEmpOrig?.marketId && e.name.trim().toLowerCase() === editEmpNameTrim.toLowerCase());
 
   function saveEditEmp() {
-    if (!editEmp) return;
-    const changes = { weeklyHours: editEmp.weeklyHours ? parseFloat(String(editEmp.weeklyHours).replace(",", ".")) : null, defaultRoles: editEmp.defaultRoles ?? [], isMarktleiter: !!editEmp.isMarktleiter, isSchliessKraft: !!editEmp.isSchliessKraft, isFestangestellt: !!editEmp.isFestangestellt };
+    if (!editEmp || !editEmpNameTrim || editEmpNameDup) return;
+    const changes = { name: editEmpNameTrim, weeklyHours: editEmp.weeklyHours ? parseFloat(String(editEmp.weeklyHours).replace(",", ".")) : null, defaultRoles: editEmp.defaultRoles ?? [], isMarktleiter: !!editEmp.isMarktleiter, isSchliessKraft: !!editEmp.isSchliessKraft, isFestangestellt: !!editEmp.isFestangestellt };
     if (editEmp.newPassword?.trim()) { changes.password = editEmp.newPassword.trim(); changes.mustChangePw = true; }
     onUpdateEmployee(editEmp.id, changes);
     setEditEmp(null);
@@ -3264,7 +3300,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                 const newShifts = [];
                 const empById = new Map(mktEmps.map(e => [e.id, e]));
 
-                const planOne = (a, emp, overrideStart, overrideEnd) => {
+                const planOne = (a, emp, overrideStart, overrideEnd, forceRole) => {
                   const rem = target(emp) - (planned[emp.id] ?? 0);
                   if (rem <= 0) return false;
                   const startStr = overrideStart ?? a.startTime;
@@ -3272,10 +3308,19 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                   if (!emp.isMarktleiter && emp.weeklyHours <= 10) endMin = Math.min(endMin, toMin(startStr) + Math.min(rem, 300));
                   const shiftMin = endMin - toMin(startStr);
                   if (shiftMin < 60) return false;
-                  const assignedRoles = (emp.defaultRoles ?? []).length > 0 ? emp.defaultRoles : [defaultRole];
+                  const shiftTyp = classifyShift(startStr, thr);
+                  // Hauptabteilung (erste feste Abteilung) zuerst; Nebenabteilung nur, wenn die Hauptabteilung
+                  // für diese Schichtart schon gedeckt ist und eine Nebenabteilung noch Bedarf hat.
+                  const defs = emp.defaultRoles ?? [];
+                  let assignedRoles = defs.length > 0 ? [defs[0]] : [defaultRole];
+                  if (forceRole) assignedRoles = [forceRole];
+                  else if (defs.length > 1 && roleTypDeficit(defs[0], shiftTyp) <= 0) {
+                    const nb = defs.slice(1).filter(rn => roleTypDeficit(rn, shiftTyp) > 0)
+                      .sort((x, y) => roleTypDeficit(y, shiftTyp) - roleTypDeficit(x, shiftTyp))[0];
+                    if (nb) assignedRoles = [nb];
+                  }
                   newShifts.push({ id: uid(), employeeId: emp.id, date: a.date, startTime: startStr, endTime: fmtT(endMin), roles: assignedRoles });
                   planned[emp.id] = (planned[emp.id] ?? 0) + shiftMin;
-                  const shiftTyp = classifyShift(startStr, thr);
                   assignedRoles.forEach(rn => { if (rolePlannedMin[rn]) rolePlannedMin[rn][shiftTyp] = (rolePlannedMin[rn][shiftTyp] ?? 0) + shiftMin; });
                   return true;
                 };
@@ -3307,7 +3352,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                     .map(a => ({ a, emp: empById.get(a.employeeId) }))
                     .filter(x => x.emp && target(x.emp) - (planned[x.emp.id] ?? 0) > 0);
 
-                  const plan = (x) => { if (planOne(x.a, x.emp)) { alreadyPlanned.add(x.emp.id); return true; } return false; };
+                  const plan = (x, forceRole) => { if (planOne(x.a, x.emp, undefined, undefined, forceRole)) { alreadyPlanned.add(x.emp.id); return true; } return false; };
                   const avail = () => dayAvail.filter(x => !alreadyPlanned.has(x.emp.id));
                   const byPrio = (arr) => [...arr].sort((x, y) =>
                     ((x.emp.isSchliessKraft ? 0 : 1) - (y.emp.isSchliessKraft ? 0 : 1)) ||
@@ -3333,9 +3378,9 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
 
                   // ── Schritt 3: Kasse Früh + Spät sicherstellen ──
                   const kasseFrueh = byPrio(avail().filter(x => (x.emp.defaultRoles ?? []).includes("Kasse") && x.a.startTime < fruehEnd)).shift();
-                  if (kasseFrueh) plan(kasseFrueh);
+                  if (kasseFrueh) plan(kasseFrueh, "Kasse");
                   const kasseSpaet = byPrio(avail().filter(x => (x.emp.defaultRoles ?? []).includes("Kasse") && x.a.startTime >= spaetStart)).shift();
-                  if (kasseSpaet) plan(kasseSpaet);
+                  if (kasseSpaet) plan(kasseSpaet, "Kasse");
 
                   // ── Schritt 4: Liefertag → Mittelschicht bevorzugt auffüllen ──
                   if (isDeliveryDay) {
@@ -4001,7 +4046,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
 
       {/* Mitarbeiter anlegen Modal */}
       {showAddEmp && (
-        <div className="ov" onClick={() => { setShowAddEmp(false); setNewEmpName(""); setNewEmpPw(""); }}>
+        <div className="ov" onClick={() => { setShowAddEmp(false); setNewEmpName(""); setNewEmpPw(""); setNewEmpFest(false); }}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-t">Mitarbeiter anlegen</div>
             <div className="modal-s">Neuen Zugang für {market?.name} erstellen.</div>
@@ -4017,27 +4062,18 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                 onChange={e => setNewEmpHours(e.target.value)}
                 onKeyDown={e => e.key === "Enter" && addEmp()} />
             </div>
-            {roles.length > 0 && (
-              <div className="field">
-                <label>Feste Abteilung(en)</label>
-                <div className="role-chip-wrap" style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 4 }}>
-                  {roles.map(r => {
-                    const on = newEmpRoles.includes(r.name);
-                    return (
-                      <label key={r.id} className="role-chip" style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer", fontSize: 13,
-                        background: on ? r.color + "22" : "#F8FAFC", border: `1.5px solid ${on ? r.color : "#E2E8F0"}`,
-                        borderRadius: 7, padding: "4px 10px", userSelect: "none" }}>
-                        <input type="checkbox" checked={on} onChange={() => toggleNewEmpRole(r.name)} style={{ accentColor: r.color }} />
-                        <span style={{ fontWeight: 700, color: on ? r.color : "#64748B" }}>{r.name}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
+            <div className="field" style={{ marginBottom: 10 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", userSelect: "none" }}>
+                <input type="checkbox" checked={newEmpFest} onChange={e => setNewEmpFest(e.target.checked)}
+                  style={{ width: 16, height: 16, accentColor: "#7C3AED" }} />
+                <span style={{ fontWeight: 700, fontSize: 13, color: "#1E293B" }}>Festangestellt</span>
+                <span style={{ fontSize: 11, color: "#94A3B8" }}>(trägt nur Abwesenheiten ein, keine wöchentliche Verfügbarkeit)</span>
+              </label>
+            </div>
+            {roles.length > 0 && <RoleMainPicker roles={roles} value={newEmpRoles} onChange={setNewEmpRoles} />}
             <div className="pw-hint">Der Mitarbeiter wird beim ersten Login aufgefordert, ein eigenes Passwort zu setzen.</div>
             <div className="macts">
-              <button className="btn-cancel" onClick={() => { setShowAddEmp(false); setNewEmpName(""); setNewEmpPw(""); setNewEmpHours(""); setNewEmpRoles([]); }}>Abbrechen</button>
+              <button className="btn-cancel" onClick={() => { setShowAddEmp(false); setNewEmpName(""); setNewEmpPw(""); setNewEmpHours(""); setNewEmpRoles([]); setNewEmpFest(false); }}>Abbrechen</button>
               <button className="btn-ok" disabled={!newEmpName.trim() || !newEmpPw} onClick={addEmp}>Anlegen</button>
             </div>
           </div>
@@ -4050,8 +4086,16 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-t">Mitarbeiter bearbeiten</div>
             <div className="modal-s" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontWeight: 700, color: "#1E293B" }}>{editEmp.name}</span>
+              <span style={{ fontWeight: 700, color: "#1E293B" }}>{editEmpOrig?.name ?? editEmp.name}</span>
               {editEmp.isMarktleiter && <span style={{ fontSize: 9, fontWeight: 800, background: "#0F172A", color: "#fff", borderRadius: 4, padding: "1px 5px" }}>ML</span>}
+            </div>
+            <div className="field"><label>Name</label>
+              <input type="text" placeholder="Vor- und Nachname" value={editEmp.name}
+                onChange={e => setEditEmp(p => ({ ...p, name: e.target.value }))} />
+              {editEmpNameDup && <div style={{ fontSize: 11, color: "#DC2626", marginTop: 4 }}>⚠️ Diesen Namen gibt es in diesem Markt schon.</div>}
+              {!editEmpNameDup && editEmpNameTrim !== "" && editEmpNameTrim !== (editEmpOrig?.name ?? "").trim() && (
+                <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 4 }}>Schichten, Verfügbarkeiten und Passwort bleiben erhalten. Beim Plan-Import muss der Name im PDF dann zum neuen Namen passen.</div>
+              )}
             </div>
             {isAdmin && (
               <div className="field" style={{ marginBottom: 10 }}>
@@ -4089,26 +4133,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
               <input type="number" step="any" placeholder="z.B. 37,5" min="1" max="48" value={editEmp.weeklyHours}
                 onChange={e => setEditEmp(p => ({ ...p, weeklyHours: e.target.value }))} />
             </div>
-            {roles.length > 0 && (
-              <div className="field">
-                <label>Feste Abteilung(en)</label>
-                <div className="role-chip-wrap" style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 4 }}>
-                  {roles.map(r => {
-                    const on = (editEmp.defaultRoles ?? []).includes(r.name);
-                    return (
-                      <label key={r.id} className="role-chip" style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer", fontSize: 13,
-                        background: on ? r.color + "22" : "#F8FAFC", border: `1.5px solid ${on ? r.color : "#E2E8F0"}`,
-                        borderRadius: 7, padding: "4px 10px", userSelect: "none" }}>
-                        <input type="checkbox" checked={on} onChange={() =>
-                          setEditEmp(p => ({ ...p, defaultRoles: on ? (p.defaultRoles ?? []).filter(x => x !== r.name) : [...(p.defaultRoles ?? []), r.name] }))
-                        } style={{ accentColor: r.color }} />
-                        <span style={{ fontWeight: 700, color: on ? r.color : "#64748B" }}>{r.name}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
+            {roles.length > 0 && <RoleMainPicker roles={roles} value={editEmp.defaultRoles} onChange={v => setEditEmp(p => ({ ...p, defaultRoles: v }))} />}
             {(isAdmin || !editEmp.isMarktleiter) && (
               <div className="field" style={{ marginTop: 14, background: "#FFFBEB", border: "1.5px solid #FDE68A", borderRadius: 10, padding: "10px 12px" }}>
                 <label style={{ color: "#92400E" }}>🔑 Passwort zurücksetzen{editEmp.isMarktleiter ? " (nur Admin)" : ""}</label>
@@ -4133,12 +4158,12 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
                 onClick={() => { setEditEmp(null); setDelEmpModal(employees.find(e => e.id === editEmp.id)); }}
                 style={{ width: "100%", padding: "8px", borderRadius: 8, border: "1.5px solid #FCA5A5", background: "#FFF1F2", color: "#DC2626", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
               >
-                🗑 {editEmp.name} entfernen
+                🗑 {editEmpOrig?.name ?? editEmp.name} entfernen
               </button>
             </div>
             <div className="macts">
               <button className="btn-cancel" onClick={() => setEditEmp(null)}>Abbrechen</button>
-              <button className="btn-ok" onClick={saveEditEmp}>Speichern</button>
+              <button className="btn-ok" disabled={!editEmpNameTrim || editEmpNameDup} onClick={saveEditEmp}>Speichern</button>
             </div>
           </div>
         </div>
