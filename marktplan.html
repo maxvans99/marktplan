@@ -479,7 +479,7 @@ function reportCloudError(e) {
 // ─── PERSISTENZ (localStorage) ───────────────────────────────────────────────
 const LS_PREFIX  = "marktplan:";
 const LS_VERSION = "1"; // bei zukünftiger Struktur-Änderung hochzählen
-const APP_BUILD  = "20261109-2"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
+const APP_BUILD  = "20261123-11"; // bei jedem Deploy aktualisieren → erzwingt Auto-Reload
 
 function clearAllPersistedState() {
   try {
@@ -800,6 +800,50 @@ function getDeadline(weekStart, daysBefore = DEFAULT_DEADLINE_DAYS) {
   const d = addDays(weekStart, -daysBefore); d.setHours(23, 59, 59, 999); return d;
 }
 const isPastDeadline = (weekStart, daysBefore = DEFAULT_DEADLINE_DAYS) => new Date() > getDeadline(weekStart, daysBefore);
+
+// ─── PLANUNGS-STOPP ──────────────────────────────────────────────────────────
+// Die Marktleitung startet die Planung für eine Woche: nach einer einstellbaren Vorlaufzeit oder zu einem festen
+// Zeitpunkt sind für diese Woche keine Verfügbarkeiten/Abwesenheiten mehr möglich — und die Woche bleibt für die
+// Mitarbeiter dauerhaft geschlossen. Eintrag je Markt UND Woche: planningState[marketId][weekStartISO] =
+// { startedAt, lockAt, minutes, done?, doneAt? } (Zeitpunkte in ms). Der Markt-Schlüssel bleibt immer bestehen,
+// damit das Dokument nie komplett leer ist (der Cloud-Schreibschutz würde leere Dokumente nicht speichern).
+const PLAN_LEAD_OPTIONS = [{ min: 15, label: "0:15" }, { min: 30, label: "0:30" }, { min: 45, label: "0:45" }, { min: 60, label: "1:00" }, { min: 90, label: "1:30" }, { min: 120, label: "2:00" }, { min: 0, label: "Sofort" }];
+const PLAN_FAR_MS = 12 * 3600 * 1000; // ab dieser Entfernung gilt es als angekündigter Termin statt als Countdown
+const planEntry = (planning, weekISO) => (planning && planning[weekISO]) || null;
+const planLockedFor = (planning, weekISO, now) => { const e = planEntry(planning, weekISO); return !!e && now >= e.lockAt; };
+// Nächste angekündigte, noch nicht gesperrte Planung (egal für welche Woche)
+function planUpcoming(planning, now) {
+  let best = null;
+  Object.entries(planning || {}).forEach(([wk, e]) => { if (e && e.lockAt > now && (!best || e.lockAt < best.lockAt)) best = { ...e, weekStart: wk }; });
+  return best;
+}
+const fmtClock = ms => new Date(ms).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+// "heute, 17:00 Uhr" / "morgen, 17:00 Uhr" / "Do., 26.11. um 17:00 Uhr"
+function fmtLock(ms, nowMs = Date.now()) {
+  const d = new Date(ms), n = new Date(nowMs);
+  const dayDiff = Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()) - new Date(n.getFullYear(), n.getMonth(), n.getDate())) / 86400000);
+  if (dayDiff === 0) return `heute, ${fmtClock(ms)} Uhr`;
+  if (dayDiff === 1) return `morgen, ${fmtClock(ms)} Uhr`;
+  return `${d.toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit" })} um ${fmtClock(ms)} Uhr`;
+}
+function fmtRemain(ms) {
+  const min = Math.max(1, Math.round(ms / 60000));
+  if (min < 60) return `${min} Min`;
+  const h = Math.floor(min / 60), m = min % 60;
+  return m ? `${h} Std ${m} Min` : `${h} Std`;
+}
+function useNow(intervalMs = 20000, resyncKey) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { setNow(Date.now()); }, [resyncKey]); // sofort neu lesen, wenn sich die Frist ändert
+  useEffect(() => {
+    const tick = () => setNow(Date.now());
+    const t = setInterval(tick, intervalMs);
+    const onVis = () => { if (!document.hidden) tick(); }; // Handy wieder entsperrt / Tab wieder offen → Anzeige sofort aktuell
+    document.addEventListener("visibilitychange", onVis); window.addEventListener("focus", tick);
+    return () => { clearInterval(t); document.removeEventListener("visibilitychange", onVis); window.removeEventListener("focus", tick); };
+  }, [intervalMs]);
+  return now;
+}
 function getKW(date) {
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
   const day = d.getUTCDay() || 7; d.setUTCDate(d.getUTCDate() + 4 - day);
@@ -984,6 +1028,8 @@ function App({ onSessionChange, logoutTick }) {
   // Push-Geräte-Tokens: viele-zu-eins möglich (ein Gerät kann mehreren Mitarbeitern
   // zugeordnet sein, z.B. Familien-Handy) — siehe {employeeId, token, marketId}.
   const [pushTokens, setPushTokens] = usePersistedState("pushTokens", []);
+  // Planungs-Stopp je Markt und Woche (siehe PLANUNGS-STOPP oben) — { [marketId]: { [weekStartISO]: { startedAt, lockAt, minutes, done? } } }
+  const [planningState, setPlanningState] = usePersistedState("planningState", {});
   async function enablePushForEmployee(employeeId, marketId) {
     const result = await requestPushToken();
     if (result.error) return result;
@@ -1164,7 +1210,7 @@ function App({ onSessionChange, logoutTick }) {
   if (page === "employee") {
     const me = employees.find(e => e.id === myEmployeeId);
     return (
-      <EmployeeView {...common} me={me} marketId={marketId} deadlineDays={deadlineDaysByMarket[marketId] ?? DEFAULT_DEADLINE_DAYS}
+      <EmployeeView {...common} me={me} marketId={marketId} planning={planningState[marketId] ?? {}} deadlineDays={deadlineDaysByMarket[marketId] ?? DEFAULT_DEADLINE_DAYS}
         pushEnabled={pushTokens.some(t => t.employeeId === myEmployeeId)}
         onEnablePush={() => enablePushForEmployee(myEmployeeId, marketId)}
         onDisablePush={() => disablePushForEmployee(myEmployeeId)}
@@ -1198,7 +1244,15 @@ function App({ onSessionChange, logoutTick }) {
   return (
     <ManagerView {...common} marketId={marketId} onMarketChange={isAdmin ? setMarketId : null} isAdmin={isAdmin}
       deadlineDaysByMarket={deadlineDaysByMarket} onUpdateDeadlineDaysByMarket={setDeadlineDaysByMarket}
-      onNotifyEmployees={(empIds) => notifyEmployees(marketId, empIds)}
+      onNotifyEmployees={(empIds, title, body) => notifyEmployees(marketId, empIds, title, body)}
+      planning={planningState[marketId] ?? {}}
+      onSetPlanning={(weekISO, entry) => setPlanningState(p => {
+        const mk = { ...(p[marketId] ?? {}) };
+        if (entry) mk[weekISO] = entry; else delete mk[weekISO];
+        const cutoff = fmtISO(addDays(new Date(), -60));
+        Object.keys(mk).forEach(k => { if (k < cutoff) delete mk[k]; }); // alte Wochen aufräumen
+        return { ...p, [marketId]: mk };
+      })}
       onAddShift={s => setShifts(p => [...p, { ...s, id: uid() }])}
       onDelShift={id => setShifts(p => p.filter(s => s.id !== id))}
       onAddEmployee={async (name, pw, wh, defRoles, isFest) => {
@@ -1610,6 +1664,11 @@ function Sidebar({ role, marketId, isAdmin, onMarketChange, onLogout, empName, o
           <div className="sb-item" onClick={action(onShowRoles)}>
             <span style={{ fontSize: 13 }}>👷</span> Rollen verwalten
           </div>
+          {onShowDeadline && (
+            <div className="sb-item" onClick={action(onShowDeadline)}>
+              <span style={{ fontSize: 13 }}>⏱️</span> Eintragefrist
+            </div>
+          )}
         </>}
         {role === "employee" && <>
           <div className="sb-section">Einstellungen</div>
@@ -1620,11 +1679,6 @@ function Sidebar({ role, marketId, isAdmin, onMarketChange, onLogout, empName, o
           {onShowManagerPw && (
             <div className="sb-item" onClick={onShowManagerPw}>
               <span style={{ fontSize: 13 }}>🔑</span> Marktleitungs-Passwörter
-            </div>
-          )}
-          {onShowDeadline && (
-            <div className="sb-item" onClick={onShowDeadline}>
-              <span style={{ fontSize: 13 }}>⏱️</span> Eintragefrist
             </div>
           )}
           {onResetData && (
@@ -1702,7 +1756,33 @@ function WeekNav({ weekStart, weekDates, onChange }) {
 }
 
 // ─── MITARBEITER-ANSICHT ──────────────────────────────────────────────────────
-function EmployeeView({ me, marketId, availability, shifts, absences, onSaveAbsences, weekStart, weekDates, onWeekChange, onSave, onChangePassword, onLogout, deadlineDays, pushEnabled, onEnablePush, onDisablePush }) {
+// Deutlicher Hinweis für Mitarbeiter, solange die Marktleitung plant bzw. gleich plant.
+function PlanAlert({ entry, now }) {
+  const weekLabel = `KW ${getKW(new Date(entry.weekStart + "T12:00:00"))}`;
+  const locked = now >= entry.lockAt;
+  const far = !locked && entry.lockAt - now > PLAN_FAR_MS;
+  const remain = fmtRemain(entry.lockAt - now);
+  const title = locked && entry.done ? `🔒 Eingaben für ${weekLabel} sind geschlossen`
+    : locked ? `🔒 Die Marktleitung plant jetzt ${weekLabel} – Eingaben gesperrt`
+    : far ? `📅 Planung ${weekLabel}: ${fmtLock(entry.lockAt, now)}`
+    : entry.lockAt - now < 3600000 ? `⏳ Die Marktleitung plant gleich ${weekLabel} – noch ${remain}`
+    : `⏳ Die Marktleitung plant ${weekLabel} – noch ${remain}`;
+  const text = locked ? "Änderungen für diese Woche sind nicht mehr möglich. Bei dringenden Fällen bitte direkt bei der Marktleitung melden."
+    : far ? "Bis dahin Verfügbarkeit bzw. Abwesenheit eintragen und speichern. Danach sind Änderungen für diese Woche nicht mehr möglich."
+    : `Verfügbarkeit bzw. Abwesenheit bitte bis ${fmtLock(entry.lockAt, now)} eintragen und speichern.`;
+  return (
+    <div style={{ background: locked ? (entry.done ? "#475569" : "#DC2626") : "#F59E0B", color: "#fff", borderRadius: 12, padding: "14px 16px", marginBottom: 16 }}>
+      <div style={{ fontSize: 16, fontWeight: 800 }}>{title}</div>
+      <div style={{ fontSize: 13, fontWeight: 600, marginTop: 4, opacity: .95 }}>{text}</div>
+    </div>
+  );
+}
+
+function EmployeeView({ me, marketId, availability, shifts, absences, onSaveAbsences, weekStart, weekDates, onWeekChange, onSave, onChangePassword, onLogout, deadlineDays, planning, pushEnabled, onEnablePush, onDisablePush }) {
+  const now = useNow(20000, JSON.stringify(planning ?? {}));
+  const planCur = planEntry(planning, fmtISO(weekStart)); // Planungs-Eintrag der angezeigten Woche
+  const planLocked = planLockedFor(planning, fmtISO(weekStart), now); // diese Woche ist für Eingaben geschlossen
+  const planUp = planUpcoming(planning, now); // angekündigte/laufende Vorwarnung
   const [sbOpen, setSbOpen] = useState(false);
   const [showPwModal, setShowPwModal] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -1737,6 +1817,7 @@ function EmployeeView({ me, marketId, availability, shifts, absences, onSaveAbse
   const setDay = (ds, patch) => { setForm(f => ({ ...f, [ds]: { ...f[ds], ...patch } })); setSaved(false); };
 
   function handleSave() {
+    if (planLockedFor(planning, fmtISO(weekStart), Date.now())) return;
     const avails = weekDates.filter(d => form[fmtISO(d)]?.on).map(d => ({
       id: uid(), employeeId: me.id, date: fmtISO(d),
       startTime: form[fmtISO(d)].start, endTime: form[fmtISO(d)].end,
@@ -1758,6 +1839,7 @@ function EmployeeView({ me, marketId, availability, shifts, absences, onSaveAbse
   const setAbsDay = (ds, patch) => { setAbsForm(f => ({ ...f, [ds]: { ...f[ds], ...patch } })); setAbsSaved(false); };
 
   function handleSaveAbsences() {
+    if (planLockedFor(planning, fmtISO(weekStart), Date.now())) return;
     const entries = weekDates.filter(d => absForm[fmtISO(d)]?.on).map(d => ({
       id: uid(), employeeId: me.id, date: fmtISO(d), note: absForm[fmtISO(d)].note?.trim() ?? "",
     }));
@@ -1772,7 +1854,7 @@ function EmployeeView({ me, marketId, availability, shifts, absences, onSaveAbse
   }
 
   const market = MARKETS.find(m => m.id === marketId);
-  const locked = isPastDeadline(weekStart, deadlineDays);
+  const locked = isPastDeadline(weekStart, deadlineDays) || planLocked;
   const deadline = getDeadline(weekStart, deadlineDays);
   const deadlineStr = deadline.toLocaleDateString("de-DE", { weekday: "long", day: "2-digit", month: "2-digit" });
 
@@ -1818,6 +1900,9 @@ function EmployeeView({ me, marketId, availability, shifts, absences, onSaveAbse
           </div>
         )}
 
+        {planUp && <PlanAlert entry={planUp} now={now} />}
+        {planLocked && <PlanAlert entry={{ ...planCur, weekStart: fmtISO(weekStart) }} now={now} />}
+
         <WeekNav weekStart={weekStart} weekDates={weekDates} onChange={onWeekChange} />
 
         <div className="sec-label" style={{ marginBottom: 10 }}>Meine Schichten diese Woche</div>
@@ -1848,7 +1933,10 @@ function EmployeeView({ me, marketId, availability, shifts, absences, onSaveAbse
         {me?.isFestangestellt ? (
           <>
             <div className="sec-label" style={{ marginBottom: 10 }}>Abwesenheit eintragen</div>
-            <div className="avcard">
+            {planLocked && (
+              <div className="alert-w" style={{ marginBottom: 14 }}>🔒 Die Eingaben für diese Woche sind geschlossen — Änderungen sind nicht mehr möglich.</div>
+            )}
+            <div className="avcard" style={{ opacity: planLocked ? 0.6 : 1 }}>
               {weekDates.map((d, i) => {
                 const ds = fmtISO(d); const day = absForm[ds] || { on: false, note: "" };
                 return (
@@ -1856,19 +1944,20 @@ function EmployeeView({ me, marketId, availability, shifts, absences, onSaveAbse
                     <div className="av-d">{DAY_NAMES[i]}</div>
                     <div className="av-date">{fmtShort(d)}</div>
                     <label className="toggle">
-                      <input type="checkbox" checked={day.on} onChange={e => setAbsDay(ds, { on: e.target.checked })} />
-                      <span className="t-track" />
+                      <input type="checkbox" checked={day.on} disabled={planLocked} onChange={e => !planLocked && setAbsDay(ds, { on: e.target.checked })} />
+                      <span className="t-track" style={{ cursor: planLocked ? "not-allowed" : "pointer" }} />
                     </label>
                     {day.on
-                      ? <input type="text" placeholder="z. B. Urlaub, Arzttermin, Krank …" value={day.note}
-                          onChange={e => setAbsDay(ds, { note: e.target.value })}
+                      ? <input type="text" placeholder="z. B. Urlaub, Arzttermin, Krank …" value={day.note} disabled={planLocked}
+                          onChange={e => !planLocked && setAbsDay(ds, { note: e.target.value })}
                           style={{ flex: 1, padding: "7px 10px", border: "1.5px solid #E2E8F0", borderRadius: 7, fontSize: 13, color: "#1E293B", outline: "none" }} />
                       : <div className="av-none">Anwesend</div>}
                   </div>
                 );
               })}
               <div className="save-bar">
-                <button className="btn-save" onClick={handleSaveAbsences}>Abwesenheit speichern</button>
+                <button className="btn-save" disabled={planLocked} onClick={handleSaveAbsences}
+                  style={{ opacity: planLocked ? 0.4 : 1, cursor: planLocked ? "not-allowed" : "pointer" }}>Abwesenheit speichern</button>
                 {absSaved === true && <div className="saved">✓ Gespeichert</div>}
                 {absSaved === false && <div style={{ fontSize: 12, color: "#F59E0B", fontWeight: 600 }}>⚠ Nicht gespeichert</div>}
               </div>
@@ -1879,7 +1968,9 @@ function EmployeeView({ me, marketId, availability, shifts, absences, onSaveAbse
         <div className="sec-label" style={{ marginBottom: 10 }}>Meine Verfügbarkeit eintragen</div>
         {locked && (
           <div className="alert-w" style={{ marginBottom: 14 }}>
-            🔒 Frist abgelaufen — Eintragen war bis {deadlineStr}, 23:59 Uhr möglich. Änderungen für diese Woche sind nicht mehr möglich.
+            {isPastDeadline(weekStart, deadlineDays)
+              ? `🔒 Frist abgelaufen — Eintragen war bis ${deadlineStr}, 23:59 Uhr möglich. Änderungen für diese Woche sind nicht mehr möglich.`
+              : "🔒 Die Eingaben für diese Woche sind geschlossen — Änderungen sind nicht mehr möglich."}
           </div>
         )}
         <div className="avcard" style={{ opacity: locked ? 0.6 : 1 }}>
@@ -2770,8 +2861,8 @@ function RolesModal({ roles, thresholds: initThresholds, marketHours: initMh, on
 }
 
 // ─── EINTRAGEFRIST MODAL (fragt zuerst nach dem Markt, dann Tage + Mini-Kalender) ─
-function DeadlineModal({ deadlineDaysByMarket, onSave, onClose }) {
-  const [marketId, setMarketId] = useState(null);
+function DeadlineModal({ deadlineDaysByMarket, onSave, onClose, fixedMarketId = null }) {
+  const [marketId, setMarketId] = useState(fixedMarketId);
 
   if (!marketId) {
     return (
@@ -2795,7 +2886,7 @@ function DeadlineModal({ deadlineDaysByMarket, onSave, onClose }) {
   }
 
   return <DeadlineMarketEditor marketId={marketId} marketName={MARKETS.find(m => m.id === marketId)?.name ?? ""}
-    deadlineDaysByMarket={deadlineDaysByMarket} onBack={() => setMarketId(null)}
+    deadlineDaysByMarket={deadlineDaysByMarket} onBack={fixedMarketId ? null : () => setMarketId(null)}
     onSave={val => onSave(marketId, val)} onClose={onClose} />;
 }
 
@@ -2855,7 +2946,7 @@ function DeadlineMarketEditor({ marketId, marketName, deadlineDaysByMarket, onSa
   return (
     <div className="ov" onClick={onClose}>
       <div className="modal" style={{ width: "min(420px, calc(100vw - 24px))", maxHeight: "90vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
-        <div style={{ fontSize: 12, color: "#3B82F6", cursor: "pointer", marginBottom: 6 }} onClick={onBack}>← anderer Markt</div>
+        {onBack && <div style={{ fontSize: 12, color: "#3B82F6", cursor: "pointer", marginBottom: 6 }} onClick={onBack}>← anderer Markt</div>}
         <div className="modal-t">⏱️ Eintragefrist — {marketName}</div>
         <div className="modal-s">Wie viele Tage vor Wochenbeginn (Montag) endet die Frist für Mitarbeiter dieses Markts, ihre Verfügbarkeit einzutragen? Standard: {DEFAULT_DEADLINE_DAYS} Tage (Mittwoch 23:59 der Vorwoche).</div>
 
@@ -2993,7 +3084,16 @@ function ZeitkontoModal({ emp, shifts, onClose }) {
   );
 }
 
-function ManagerView({ marketId, onMarketChange, isAdmin, employees, availability, shifts, absences, weekStart, weekDates, onWeekChange, onAddShift, onDelShift, onAddEmployee, onDeleteEmployee, onUpdateEmployee, deliveryConfig, onUpdateDelivery, roles, thresholds, marketHours, onUpdateRoles, onUpdateMarketHours, onBulkAddShifts, onReplaceShifts, onImportAbsences, onSetAbsence, onDelAbsence, onLogout, onResetData, managerCreds, onUpdateManagerCreds, deadlineDaysByMarket, onUpdateDeadlineDaysByMarket, onDownloadBackup, onNotifyEmployees }) {
+function ManagerView({ marketId, onMarketChange, isAdmin, employees, availability, shifts, absences, weekStart, weekDates, onWeekChange, onAddShift, onDelShift, onAddEmployee, onDeleteEmployee, onUpdateEmployee, deliveryConfig, onUpdateDelivery, roles, thresholds, marketHours, onUpdateRoles, onUpdateMarketHours, onBulkAddShifts, onReplaceShifts, onImportAbsences, onSetAbsence, onDelAbsence, onLogout, onResetData, managerCreds, onUpdateManagerCreds, deadlineDaysByMarket, onUpdateDeadlineDaysByMarket, onDownloadBackup, onNotifyEmployees, planning, onSetPlanning }) {
+  const now = useNow(20000, JSON.stringify(planning ?? {}));
+  const planCur = planEntry(planning, fmtISO(weekStart)); // Planungs-Eintrag der angezeigten Woche
+  const planPhase = !planCur ? "none" : now < planCur.lockAt ? "pending" : planCur.done ? "done" : "locked";
+  const [showPlanStart, setShowPlanStart] = useState(false);
+  const [planLead, setPlanLead] = useState(() => { try { const v = parseInt(localStorage.getItem("marktplan-ui:planLead"), 10); return PLAN_LEAD_OPTIONS.some(o => o.min === v) ? v : 30; } catch { return 30; } });
+  const [planMode, setPlanMode] = useState("lead"); // "lead" = Vorlaufzeit, "time" = fester Zeitpunkt
+  const [planDate, setPlanDate] = useState(""); const [planTime, setPlanTime] = useState("");
+  const [planPush, setPlanPush] = useState(true);
+  const [planBusy, setPlanBusy] = useState(false);
   const [notifyState, setNotifyState] = useState("idle"); // idle | sending | done | error
   const [notifyErrorMsg, setNotifyErrorMsg] = useState("");
   // Sammelt die employeeIds, deren Schichten seit der letzten Benachrichtigung
@@ -3031,6 +3131,60 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
     }
     setTimeout(() => setNotifyState("idle"), 5000);
   }
+  const localDate = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  function pickPlanTime() { // erster Klick auf "Bis …": sinnvoller Vorschlag = nächste volle Stunde
+    setPlanMode("time");
+    if (!planDate || !planTime) {
+      const d = new Date(); d.setMinutes(0, 0, 0); d.setHours(d.getHours() + 1);
+      setPlanDate(localDate(d)); setPlanTime(`${String(d.getHours()).padStart(2, "0")}:00`);
+    }
+  }
+  // Zeitpunkt der Sperre laut Auswahl im Dialog (null = ungültig)
+  function planLockAtFor(nowMs) {
+    if (planMode === "lead") return nowMs + planLead * 60000;
+    const t = planDate && planTime ? new Date(`${planDate}T${planTime}:00`).getTime() : NaN;
+    return Number.isFinite(t) && t > nowMs + 30000 && t < nowMs + 21 * 86400000 ? t : null;
+  }
+  async function startPlanning() {
+    const nowMs = Date.now();
+    const lockAt = planLockAtFor(nowMs);
+    if (lockAt == null) return;
+    if (planMode === "lead" && planLead === 0 && !window.confirm("Die Woche wird sofort für die Mitarbeiter geschlossen und bleibt es. Fortfahren?")) return;
+    setPlanBusy(true);
+    const entry = { startedAt: nowMs, lockAt, minutes: Math.round((lockAt - nowMs) / 60000) };
+    onSetPlanning(fmtISO(weekStart), entry);
+    if (planMode === "lead") { try { localStorage.setItem("marktplan-ui:planLead", String(planLead)); } catch {} }
+    const far = lockAt - nowMs > PLAN_FAR_MS;
+    const immediate = planMode === "lead" && planLead === 0;
+    let msg = immediate ? "✓ Planung gestartet – Eingaben jetzt gesperrt" : far ? "✓ Planungstermin gesetzt" : "✓ Planung gestartet";
+    const ids = mktEmps.filter(e => !e.isMarktleiter).map(e => e.id);
+    if (planPush && ids.length > 0) {
+      const kw = `KW ${getKW(weekStart)}`;
+      const title = immediate ? "Planung läuft" : far ? "Planungstermin" : "Planung beginnt gleich";
+      const body = immediate
+        ? `Die Marktleitung plant jetzt ${kw}. Änderungen sind ab sofort gesperrt.`
+        : far
+        ? `Die Marktleitung plant ${kw}: ${fmtLock(lockAt, nowMs)}. Bis dahin kannst du Verfügbarkeit bzw. Abwesenheit eintragen.`
+        : `Die Marktleitung plant ${kw}. Verfügbarkeit bzw. Abwesenheit kannst du noch bis ${fmtLock(lockAt, nowMs)} eintragen.`;
+      try {
+        let sent = 0;
+        for (let i = 0; i < ids.length; i += 12) { const r = await onNotifyEmployees(ids.slice(i, i + 12), title, body); sent += r?.sent ?? 0; }
+        msg += ` – ${sent} Gerät${sent === 1 ? "" : "e"} benachrichtigt`;
+      } catch (e) {
+        console.warn("Planungs-Benachrichtigung fehlgeschlagen:", e);
+        msg += " – Benachrichtigung fehlgeschlagen (bitte ab- und wieder anmelden)";
+      }
+    }
+    setPlanBusy(false); setShowPlanStart(false); flash(msg, 5000);
+  }
+  // Vor Ablauf der Frist: Planung abbrechen (z. B. aus Versehen gestartet)
+  function cancelPlanning() { onSetPlanning(fmtISO(weekStart), null); flash("✓ Planung abgebrochen – Eingaben bleiben offen"); }
+  // Nach Ablauf: nur als "fertig" markieren. Die Woche bleibt geschlossen; Mitarbeiter werden dabei NICHT benachrichtigt
+  // (das passiert ausschließlich über "Mitarbeiter über diesen Plan benachrichtigen").
+  function finishPlanning() { onSetPlanning(fmtISO(weekStart), { ...planCur, done: true, doneAt: Date.now() }); flash("✓ Plan fertig – Woche bleibt geschlossen (Mitarbeiter nicht benachrichtigt)", 4000); }
+  // Nur Admin: Sperre einer Woche wieder aufheben (z. B. falsche Woche gewählt)
+  function adminUnlockPlanning() { onSetPlanning(fmtISO(weekStart), null); flash("✓ Sperre aufgehoben – Eingaben wieder offen (bis zur normalen Frist)", 4000); }
+
   const [sbOpen, setSbOpen] = useState(false);
   const [modal, setModal] = useState(null);
   const [absNote, setAbsNote] = useState("");
@@ -3054,10 +3208,10 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
   const [zeitkontoEmp, setZeitkontoEmp] = useState(null); // employee-Objekt
   const [toast, setToast] = useState("");
   const toastTimer = useRef(null);
-  function flash(msg) {
+  function flash(msg, ms = 2500) {
     setToast(msg);
     if (toastTimer.current) clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(""), 2500);
+    toastTimer.current = setTimeout(() => setToast(""), ms);
   }
 
   const mktEmps = useMemo(() => employees.filter(e => e.marketId === marketId).sort((a, b) => (b.isMarktleiter ? 1 : 0) - (a.isMarktleiter ? 1 : 0)), [employees, marketId]);
@@ -3193,7 +3347,7 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
         onShowAddEmp={() => setShowAddEmp(true)}
         onShowRoles={() => setShowRoles(true)}
         onShowManagerPw={isAdmin ? () => setShowManagerPw(true) : null}
-        onShowDeadline={isAdmin ? () => setShowDeadline(true) : null}
+        onShowDeadline={() => setShowDeadline(true)}
         onResetData={onResetData} />
       <div className="main">
         <div className="ph">
@@ -3248,8 +3402,41 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
             ) : null;
           })()}
 
+          {/* Planungs-Stopp: Banner der angezeigten Woche */}
+          {planPhase !== "none" && (() => {
+            const kw = `KW ${getKW(weekStart)}`;
+            const pill = { padding: "8px 14px", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", background: "#fff" };
+            const colors = planPhase === "pending" ? ["#FEF3C7", "#FCD34D", "#92400E"] : planPhase === "locked" ? ["#FEE2E2", "#FCA5A5", "#991B1B"] : ["#DCFCE7", "#86EFAC", "#166534"];
+            return (
+              <div style={{ background: colors[0], border: `1.5px solid ${colors[1]}`, borderRadius: 10, padding: "10px 14px", marginBottom: 10, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: colors[2], flex: 1, minWidth: 220 }}>
+                  {planPhase === "pending"
+                    ? (planCur.lockAt - now > PLAN_FAR_MS
+                      ? `📅 Planung für ${kw} angekündigt: ${fmtLock(planCur.lockAt, now)}. Eingaben bis dahin möglich.`
+                      : `⏳ Planung für ${kw} startet — Eingaben noch bis ${fmtLock(planCur.lockAt, now)} möglich (noch ${fmtRemain(planCur.lockAt - now)}).`)
+                    : planPhase === "locked"
+                    ? `🔒 Planung läuft (${kw}) — Eingaben der Mitarbeiter sind seit ${fmtLock(planCur.lockAt, now)} gesperrt und bleiben geschlossen.`
+                    : `✅ Plan ${kw} fertig — Eingaben der Mitarbeiter bleiben geschlossen. Mitarbeiter erfahren davon erst über „Mitarbeiter über diesen Plan benachrichtigen“.`}
+                </span>
+                {planPhase === "pending" && <>
+                  <button style={{ ...pill, color: "#475569", border: "1.5px solid #CBD5E1" }} onClick={() => setShowPlanStart(true)}>Frist ändern</button>
+                  <button style={{ ...pill, color: "#DC2626", border: "1.5px solid #FCA5A5" }} onClick={cancelPlanning}>Abbrechen</button>
+                </>}
+                {planPhase === "locked" && <button style={{ ...pill, color: "#059669", border: "1.5px solid #6EE7B7" }} onClick={finishPlanning}>✓ Plan fertig</button>}
+                {planPhase !== "pending" && isAdmin && <button style={{ ...pill, color: "#475569", border: "1.5px solid #CBD5E1" }} onClick={adminUnlockPlanning}>Sperre aufheben (Admin)</button>}
+              </div>
+            );
+          })()}
+
           {/* Auto-Plan Button + Vorschlag-Banner */}
-          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: autoPlanProposal.length > 0 ? 0 : 6 }}>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: autoPlanProposal.length > 0 ? 0 : 6 }}>
+            {planPhase === "none" && (
+              <button title="Mitarbeiter warnen und danach Eingaben für diese Woche sperren"
+                onClick={() => setShowPlanStart(true)}
+                style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, background: "#F59E0B", color: "#fff", border: "none", borderRadius: 8, padding: "7px 14px", cursor: "pointer", boxShadow: "0 2px 8px rgba(245,158,11,.35)" }}>
+                ⏹ Planung starten
+              </button>
+            )}
             <button
               title="Planungsvorschlag für diese Woche erstellen"
               onClick={() => {
@@ -3979,9 +4166,9 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
         );
       })()}
 
-      {/* Eintragefrist Modal (nur Admin) — fragt zuerst nach dem Markt */}
-      {showDeadline && isAdmin && (
-        <DeadlineModal deadlineDaysByMarket={deadlineDaysByMarket ?? {}}
+      {/* Eintragefrist Modal — Admin wählt zuerst den Markt, die Marktleitung ändert nur ihren eigenen */}
+      {showDeadline && (
+        <DeadlineModal deadlineDaysByMarket={deadlineDaysByMarket ?? {}} fixedMarketId={isAdmin ? null : marketId}
           onSave={(mId, val) => { onUpdateDeadlineDaysByMarket(prev => ({ ...(prev ?? {}), [mId]: val })); flash("✓ Eintragefrist gespeichert"); }}
           onClose={() => setShowDeadline(false)} />
       )}
@@ -4075,6 +4262,60 @@ function ManagerView({ marketId, onMarketChange, isAdmin, employees, availabilit
             <div className="macts">
               <button className="btn-cancel" onClick={() => { setShowAddEmp(false); setNewEmpName(""); setNewEmpPw(""); setNewEmpHours(""); setNewEmpRoles([]); setNewEmpFest(false); }}>Abbrechen</button>
               <button className="btn-ok" disabled={!newEmpName.trim() || !newEmpPw} onClick={addEmp}>Anlegen</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Planung starten Modal */}
+      {showPlanStart && (
+        <div className="ov" onClick={() => !planBusy && setShowPlanStart(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-t">Planung starten</div>
+            <div className="modal-s">
+              Für <b>KW {getKW(weekStart)}</b> ({fmtShort(weekDates[0])} – {fmtShort(weekDates[6])}). Die Mitarbeiter bekommen einen Hinweis; nach der Frist können sie für diese Woche keine Verfügbarkeit und keine Abwesenheit mehr eintragen.
+            </div>
+            <div className="field"><label>Eingaben noch möglich (Std:Min) oder bis</label>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 4, alignItems: "center" }}>
+                {PLAN_LEAD_OPTIONS.map(o => {
+                  const on = planMode === "lead" && planLead === o.min;
+                  return (
+                    <button key={o.min} type="button" onClick={() => { setPlanMode("lead"); setPlanLead(o.min); }}
+                      style={{ padding: "3px 8px", borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: "pointer", fontVariantNumeric: "tabular-nums",
+                        border: `1.5px solid ${on ? "#F59E0B" : "#E2E8F0"}`, background: on ? "#FEF3C7" : "#F8FAFC", color: on ? "#92400E" : "#64748B" }}>
+                      {o.label}
+                    </button>
+                  );
+                })}
+                <div onClick={() => planMode !== "time" && pickPlanTime()}
+                  style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 5, padding: "3px 8px", borderRadius: 7, cursor: "pointer",
+                    border: `1.5px solid ${planMode === "time" ? "#F59E0B" : "#E2E8F0"}`, background: planMode === "time" ? "#FEF3C7" : "#F8FAFC" }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: planMode === "time" ? "#92400E" : "#64748B" }}>Bis</span>
+                  <input type="date" value={planDate} min={localDate(new Date())} max={localDate(new Date(Date.now() + 21 * 86400000))}
+                    onFocus={() => planMode !== "time" && pickPlanTime()} onChange={e => { setPlanMode("time"); setPlanDate(e.target.value); }}
+                    style={{ width: "auto", padding: "2px 4px", fontSize: 12, border: "1px solid #E2E8F0", borderRadius: 5 }} />
+                  <input type="time" value={planTime}
+                    onFocus={() => planMode !== "time" && pickPlanTime()} onChange={e => { setPlanMode("time"); setPlanTime(e.target.value); }}
+                    style={{ width: "auto", padding: "2px 4px", fontSize: 12, border: "1px solid #E2E8F0", borderRadius: 5 }} />
+                </div>
+              </div>
+              {(() => {
+                const lockAt = planLockAtFor(Date.now());
+                if (lockAt == null) return <div style={{ fontSize: 12, color: "#DC2626", marginTop: 6 }}>⚠️ Bitte einen Zeitpunkt in der Zukunft wählen (höchstens 3 Wochen).</div>;
+                if (planMode === "lead" && planLead === 0) return <div style={{ fontSize: 12, color: "#64748B", marginTop: 6 }}>Sofort gesperrt, ohne Vorwarnung.</div>;
+                return <div style={{ fontSize: 12, color: "#64748B", marginTop: 6 }}>
+                  Gesperrt ab {planMode === "lead" ? "ca. " : ""}{fmtLock(lockAt)}.{lockAt - Date.now() > PLAN_FAR_MS ? " Die Mitarbeiter sehen den Termin ab sofort und können bis dahin eintragen." : ""}
+                </div>;
+              })()}
+            </div>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", userSelect: "none", marginBottom: 6 }}>
+              <input type="checkbox" checked={planPush} onChange={e => setPlanPush(e.target.checked)} style={{ width: 16, height: 16, accentColor: "#F59E0B" }} />
+              <span style={{ fontSize: 13, fontWeight: 700, color: "#1E293B" }}>Mitarbeiter per Push benachrichtigen</span>
+            </label>
+            <div className="pw-hint">Bis zum Ablauf der Frist kannst du abbrechen. Danach bleibt die Woche für die Mitarbeiter geschlossen.</div>
+            <div className="macts">
+              <button className="btn-cancel" disabled={planBusy} onClick={() => setShowPlanStart(false)}>Abbrechen</button>
+              <button className="btn-ok" disabled={planBusy || planLockAtFor(Date.now()) == null} onClick={startPlanning}>{planBusy ? "⏳ …" : planPhase === "pending" ? "Frist neu setzen" : (planLockAtFor(Date.now()) ?? 0) - Date.now() > PLAN_FAR_MS ? "Termin setzen" : "Planung starten"}</button>
             </div>
           </div>
         </div>
